@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SIAK-RS — Sistem Analisis Keuangan AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --navy:#0F2438; --navy2:#16324A; --navy3:#1D3F5B;
+    --teal:#0E9488; --teal-dark:#0B6F66; --mint:#3FBDAE;
+    --bg:#F3F6F8; --card:#FFFFFF; --text:#16324A; --muted:#63798A;
+    --green:#1C9A6C; --red:#D14343; --amber:#B8863B; --border:#E1E8EC;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  h1,h2,h3,.serif{font-family:'Source Serif 4',Georgia,serif;}
+  ::selection{background:var(--mint);color:var(--navy);}
+  button{font-family:inherit;cursor:pointer;}
+  input,select{font-family:inherit;}
+
+  #app{display:flex;min-height:100vh;}
+
+  /* Sidebar */
+  #sidebar{width:250px;flex:0 0 250px;background:var(--navy);color:#fff;padding:24px 18px;position:sticky;top:0;height:100vh;overflow-y:auto;}
+  .brand{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
+  .brand-mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--teal),var(--mint));display:flex;align-items:center;justify-content:center;font-weight:700;font-family:'Source Serif 4',serif;color:var(--navy);font-size:16px;flex:none;}
+  .brand-name{font-family:'Source Serif 4',serif;font-weight:700;font-size:17px;line-height:1.15;}
+  .brand-sub{font-size:10.5px;color:#8CA3B4;letter-spacing:.4px;margin-top:2px;}
+  nav{margin-top:28px;display:flex;flex-direction:column;gap:3px;}
+  .navitem{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;color:#B9CBDA;font-size:13.5px;font-weight:500;border:none;background:transparent;text-align:left;width:100%;transition:background .12s;}
+  .navitem svg{flex:none;opacity:.85;}
+  .navitem:hover{background:#16324A;}
+  .navitem.active{background:var(--teal-dark);color:#fff;}
+  .side-foot{margin-top:26px;padding-top:16px;border-top:1px solid #22405A;font-size:11px;color:#7C93A6;line-height:1.5;}
+
+  /* Main */
+  #main{flex:1;min-width:0;padding:26px 30px 60px;}
+  .topbar{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;flex-wrap:wrap;gap:12px;}
+  .pagetitle{font-size:24px;font-weight:700;}
+  .pagesub{color:var(--muted);font-size:13px;margin-top:3px;}
+  .view{display:none;}
+  .view.active{display:block;}
+
+  /* Cards */
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px 20px;}
+  .card-title{font-size:13.5px;font-weight:600;color:var(--text);margin:0 0 4px;}
+  .grid{display:grid;gap:14px;}
+  .kpis{grid-template-columns:repeat(4,1fr);}
+  @media (max-width:1000px){.kpis{grid-template-columns:repeat(2,1fr);}}
+  .kpi{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 18px;}
+  .kpi-label{font-size:11.5px;color:var(--muted);font-weight:600;letter-spacing:.3px;}
+  .kpi-val{font-family:'IBM Plex Mono',monospace;font-size:21px;font-weight:600;margin-top:6px;}
+  .kpi-sub{font-size:11px;color:var(--muted);margin-top:4px;}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;}
+
+  .row2{display:grid;grid-template-columns:1.1fr 1fr;gap:16px;}
+  @media (max-width:980px){.row2{grid-template-columns:1fr;}}
+  @media (max-width:1000px){#progress-grid{grid-template-columns:repeat(2,1fr) !important;}}
+  @media (max-width:900px){#topitems-grid{grid-template-columns:1fr !important;}}
+  .kpi canvas{max-width:100%;}
+
+  /* Upload */
+  .dropzone{border:2px dashed #C7D6DE;border-radius:14px;padding:38px 20px;text-align:center;background:#FBFDFD;transition:border-color .15s, background .15s;}
+  .dropzone.drag{border-color:var(--teal);background:#EAF6F4;}
+  .dropzone p{margin:4px 0;color:var(--muted);font-size:13px;}
+  .btn{display:inline-flex;align-items:center;gap:7px;padding:9px 16px;border-radius:8px;border:1px solid var(--teal);background:var(--teal);color:#fff;font-size:13px;font-weight:600;}
+  .btn:hover{background:var(--teal-dark);}
+  .btn.secondary{background:#fff;color:var(--teal-dark);}
+  .btn.secondary:hover{background:#EAF6F4;}
+  .btn.ghost{background:transparent;border-color:var(--border);color:var(--text);}
+  .btn.ghost:hover{background:#F1F5F7;}
+  .btn.danger{background:#fff;color:var(--red);border-color:#F0C7C7;}
+  .btn.danger:hover{background:#FCEEEE;}
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+
+  .stepbox{margin-top:16px;}
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:5px;}
+  select, .textinput{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;background:#fff;color:var(--text);}
+  .mapgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .radio-row{display:flex;gap:16px;font-size:13px;margin-bottom:10px;}
+  .radio-row label{display:flex;align-items:center;gap:6px;font-weight:500;color:var(--text);}
+
+  table{width:100%;border-collapse:collapse;font-size:12.8px;}
+  thead th{text-align:left;background:var(--navy);color:#fff;padding:9px 10px;font-weight:600;position:sticky;top:0;}
+  tbody td{padding:8px 10px;border-bottom:1px solid var(--border);}
+  tbody tr:nth-child(even){background:#F8FAFB;}
+  .tablewrap{max-height:520px;overflow:auto;border:1px solid var(--border);border-radius:10px;}
+  .tag{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid transparent;}
+  .tag.Pendapatan{background:#E4F3F1;color:var(--teal-dark);}
+  .tag.OPEX{background:#FBEFE3;color:var(--amber);}
+  .tag.CAPEX{background:#EAEEF7;color:#3B4E9C;}
+  .tag.Pengeluaran{background:#FBEAEA;color:var(--red);}
+  .amt-in{color:var(--green);font-weight:600;}
+  .amt-out{color:var(--red);font-weight:600;}
+
+  .filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:center;}
+  .filters select,.filters input{width:auto;min-width:140px;}
+  .filters .grow{flex:1;min-width:180px;}
+
+  .catmenu{position:relative;display:inline-block;}
+  .catmenu-list{display:none;position:absolute;top:26px;left:0;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 18px rgba(15,36,56,.15);z-index:20;overflow:hidden;min-width:130px;}
+  .catmenu.open .catmenu-list{display:block;}
+  .catmenu-list button{display:block;width:100%;text-align:left;padding:8px 12px;border:none;background:#fff;font-size:12px;color:var(--text);}
+  .catmenu-list button:hover{background:#F1F5F7;}
+
+  .empty{padding:40px 20px;text-align:center;color:var(--muted);}
+  .empty h3{color:var(--text);margin-bottom:6px;}
+
+  .badge-src{font-size:10px;color:var(--muted);}
+  .histitem{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid var(--border);}
+  .histitem:last-child{border-bottom:none;}
+  .histmeta{font-size:11.5px;color:var(--muted);margin-top:2px;}
+
+  .ailog{font-size:12.5px;color:var(--muted);margin-top:8px;min-height:16px;}
+  .spinner{display:inline-block;width:13px;height:13px;border:2px solid #C7D6DE;border-top-color:var(--teal);border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:6px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .analysis-body{font-size:13.5px;line-height:1.65;color:var(--text);}
+  .analysis-body strong{color:var(--navy);}
+  .analysis-body ul{margin:8px 0;padding-left:20px;}
+  .analysis-body li{margin-bottom:5px;}
+
+  .pin-overlay{position:fixed;inset:0;background:var(--navy);display:flex;align-items:center;justify-content:center;z-index:100;}
+  .pin-box{background:var(--navy2);border-radius:16px;padding:34px 36px;text-align:center;width:320px;}
+  .pin-box input{text-align:center;font-size:22px;letter-spacing:8px;padding:12px;margin:14px 0;font-family:'IBM Plex Mono',monospace;}
+  .toast{position:fixed;bottom:22px;right:22px;background:var(--navy);color:#fff;padding:12px 18px;border-radius:9px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:200;opacity:0;transform:translateY(10px);transition:.25s;}
+  .toast.show{opacity:1;transform:translateY(0);}
+  .pagination{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:10px;font-size:12.5px;color:var(--muted);}
+  .pagination button{padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:#fff;}
+  .note{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5;}
+</style>
+</head>
+<body>
+
+<div class="pin-overlay" id="pin-overlay">
+  <div class="pin-box">
+    <div style="font-family:'Source Serif 4',serif;font-weight:700;font-size:19px;color:#fff;margin-bottom:4px;">SIAK-RS</div>
+    <div style="font-size:12px;color:#9FB6C7;margin-bottom:6px;">Masukkan PIN akses</div>
+    <input type="password" inputmode="numeric" id="pin-input" maxlength="10" class="textinput" placeholder="••••••" autocomplete="off">
+    <button class="btn" style="width:100%;justify-content:center;" id="pin-submit">Masuk</button>
+    <div id="pin-error" style="color:#F0A0A0;font-size:12px;margin-top:10px;min-height:16px;"></div>
+  </div>
+</div>
+
+<div id="app" style="display:none;">
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="brand-mark">S</div>
+      <div>
+        <div class="brand-name">SIAK-RS</div>
+        <div class="brand-sub">ANALISIS KEUANGAN AI</div>
+      </div>
+    </div>
+    <nav id="navlist">
+      <button class="navitem active" data-view="dashboard">📊&nbsp; Ringkasan</button>
+      <button class="navitem" data-view="upload">⬆️&nbsp; Unggah Dokumen</button>
+      <button class="navitem" data-view="rekap">📋&nbsp; Rekap Transaksi</button>
+      <button class="navitem" data-view="ai">🤖&nbsp; Analisis AI</button>
+      <button class="navitem" data-view="riwayat">🕘&nbsp; Riwayat Unggahan</button>
+      <a class="navitem" href="direksi.html" style="text-decoration:none;display:flex;">👔&nbsp; Mode Direksi</a>
+    </nav>
+    <div class="side-foot">
+      RSU Allam Medica<br>
+      Data tersimpan di Google Sheets — bisa diakses dari perangkat mana pun dengan PIN akses.
+    </div>
+    <div style="margin-top:10px;font-size:10px;color:#5C7488;">v2.0 · siak-rs · Google Sheets</div>
+  </aside>
+
+  <main id="main">
+
+    <!-- DASHBOARD -->
+    <section class="view active" id="view-dashboard">
+      <div class="topbar">
+        <div>
+          <div class="pagetitle">Ringkasan Keuangan</div>
+          <div class="pagesub" id="dash-period">Belum ada data — unggah dokumen untuk mulai.</div>
+        </div>
+        <button class="btn secondary" id="btn-export-dash">⬇ Unduh Rekap (Excel)</button>
+      </div>
+
+      <div id="dash-empty" class="card empty">
+        <h3>Belum ada data keuangan</h3>
+        <p>Unggah laporan kas, jurnal, atau data transaksi untuk mulai dianalisis secara otomatis.</p>
+        <div style="margin-top:14px;"><button class="btn" onclick="goView('upload')">⬆ Unggah Dokumen Pertama</button></div>
+      </div>
+
+      <div id="dash-content" style="display:none;">
+        <div class="grid kpis" style="margin-bottom:16px;">
+          <div class="kpi"><div class="kpi-label"><span class="dot" style="background:var(--teal)"></span>PENDAPATAN</div><div class="kpi-val mono" id="kpi-pendapatan">Rp 0</div><div class="kpi-sub" id="kpi-pendapatan-pct">0% dari total arus kas</div></div>
+          <div class="kpi"><div class="kpi-label"><span class="dot" style="background:var(--amber)"></span>OPEX</div><div class="kpi-val mono" id="kpi-opex">Rp 0</div><div class="kpi-sub" id="kpi-opex-pct">0% dari total arus kas</div></div>
+          <div class="kpi"><div class="kpi-label"><span class="dot" style="background:#3B4E9C"></span>CAPEX</div><div class="kpi-val mono" id="kpi-capex">Rp 0</div><div class="kpi-sub" id="kpi-capex-pct">0% dari total arus kas</div></div>
+          <div class="kpi"><div class="kpi-label"><span class="dot" style="background:var(--red)"></span>PENGELUARAN LAIN</div><div class="kpi-val mono" id="kpi-pengeluaran">Rp 0</div><div class="kpi-sub" id="kpi-pengeluaran-pct">0% dari total arus kas</div></div>
+        </div>
+
+        <div class="grid kpis" style="grid-template-columns:1fr 1fr;margin-bottom:16px;">
+          <div class="kpi"><div class="kpi-label">SELISIH (PENDAPATAN − TOTAL PENGELUARAN)</div><div class="kpi-val mono" id="kpi-net">Rp 0</div><div class="kpi-sub" id="kpi-net-sub">—</div></div>
+          <div class="kpi"><div class="kpi-label">TOTAL TRANSAKSI TERCATAT</div><div class="kpi-val mono" id="kpi-count">0</div><div class="kpi-sub" id="kpi-count-sub">dari seluruh dokumen yang diunggah</div></div>
+        </div>
+
+        <div class="row2">
+          <div class="card">
+            <div class="card-title">Komposisi Pendapatan vs Pengeluaran (OPEX / CAPEX / Lainnya)</div>
+            <canvas id="chart-donut" height="230"></canvas>
+          </div>
+          <div class="card">
+            <div class="card-title">Tren Bulanan (Gabungan)</div>
+            <canvas id="chart-trend" height="230"></canvas>
+          </div>
+        </div>
+
+        <div class="card-title" style="margin:22px 0 10px;font-size:15px;">Progress Bulanan per Kategori</div>
+        <div class="grid" id="progress-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px;">
+          <div class="kpi"><div class="kpi-label"><span class="dot" style="background:var(--teal)"></span>PENDAPATAN</div><canvas id="chart-prog-pendapatan" style="margin-top:8px;height:110px;width:100%;"></canvas></div>
+          <div class="kpi"><div class="kpi-label"><span class="dot" style="background:var(--amber)"></span>OPEX</div><canvas id="chart-prog-opex" style="margin-top:8px;height:110px;width:100%;"></canvas></div>
+          <div class="kpi"><div class="kpi-label"><span class="dot" style="background:#3B4E9C"></span>CAPEX</div><canvas id="chart-prog-capex" style="margin-top:8px;height:110px;width:100%;"></canvas></div>
+          <div class="kpi"><div class="kpi-label"><span class="dot" style="background:var(--red)"></span>PENGELUARAN LAIN</div><canvas id="chart-prog-pengeluaran" style="margin-top:8px;height:110px;width:100%;"></canvas></div>
+        </div>
+
+        <div class="card-title" style="margin:22px 0 10px;font-size:15px;">Rincian Item Terbesar per Kategori Pengeluaran</div>
+        <div class="grid" id="topitems-grid" style="grid-template-columns:repeat(3,1fr);">
+          <div class="card"><div class="card-title">Top OPEX</div><canvas id="chart-top-opex" height="220"></canvas></div>
+          <div class="card"><div class="card-title">Top CAPEX</div><canvas id="chart-top-capex" height="220"></canvas></div>
+          <div class="card"><div class="card-title">Top Pengeluaran Lain</div><canvas id="chart-top-pengeluaran" height="220"></canvas></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- UPLOAD -->
+    <section class="view" id="view-upload">
+      <div class="topbar">
+        <div>
+          <div class="pagetitle">Unggah Dokumen Keuangan</div>
+          <div class="pagesub">Excel / CSV — laporan kas, jurnal, rekap transaksi, atau data pendapatan-pengeluaran</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="dropzone" id="dropzone">
+          <div style="font-size:30px;">📄</div>
+          <p><strong style="color:var(--text)">Seret file ke sini</strong> atau klik untuk memilih</p>
+          <p>Format: .xlsx, .xls, .csv</p>
+          <input type="file" id="fileinput" accept=".xlsx,.xls,.csv" style="display:none;">
+          <button class="btn" style="margin-top:8px;" onclick="document.getElementById('fileinput').click()">Pilih File</button>
+        </div>
+
+        <div id="upload-steps" class="stepbox" style="display:none;">
+          <div class="field" id="sheet-picker-wrap">
+            <label>1. Pilih sheet yang berisi data transaksi</label>
+            <select id="sheet-picker"></select>
+          </div>
+
+          <div class="field">
+            <label>2. Format kolom nominal</label>
+            <div class="radio-row">
+              <label><input type="radio" name="amtmode" value="signed" checked> Satu kolom nominal (bertanda + / −)</label>
+              <label><input type="radio" name="amtmode" value="split"> Kolom terpisah: Masuk &amp; Keluar</label>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>3. Pemetaan kolom (hasil deteksi otomatis — sesuaikan bila perlu)</label>
+            <div class="mapgrid">
+              <div><label style="font-weight:400;font-size:11.5px;">Tanggal</label><select id="map-tanggal"></select></div>
+              <div><label style="font-weight:400;font-size:11.5px;">Keterangan / Uraian</label><select id="map-keterangan"></select></div>
+              <div id="map-signed-wrap"><label style="font-weight:400;font-size:11.5px;">Nominal</label><select id="map-nominal"></select></div>
+              <div id="map-split-in-wrap" style="display:none;"><label style="font-weight:400;font-size:11.5px;">Nominal Masuk</label><select id="map-masuk"></select></div>
+              <div id="map-split-out-wrap" style="display:none;"><label style="font-weight:400;font-size:11.5px;">Nominal Keluar</label><select id="map-keluar"></select></div>
+              <div><label style="font-weight:400;font-size:11.5px;">Kode Akun (opsional)</label><select id="map-kode"></select></div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>4. Nama batch dokumen</label>
+            <input type="text" class="textinput" id="batch-name" placeholder="cth. Laporan Kas Juli 2026">
+          </div>
+
+          <div style="display:flex;gap:10px;margin-top:6px;">
+            <button class="btn" id="btn-import">Impor &amp; Klasifikasikan Otomatis</button>
+            <button class="btn ghost" id="btn-cancel-import">Batal</button>
+          </div>
+          <div class="ailog" id="import-log"></div>
+        </div>
+      </div>
+
+      <div class="note">
+        Sistem otomatis mengklasifikasikan tiap transaksi ke <strong>Pendapatan</strong>, <strong>OPEX</strong>, <strong>CAPEX</strong>, atau <strong>Pengeluaran</strong> berdasarkan kode akun &amp; kata kunci. Transaksi yang tidak dikenali dapat diperkuat dengan AI di menu Rekap Transaksi, dan tetap dapat diubah manual.
+      </div>
+    </section>
+
+    <!-- REKAP -->
+    <section class="view" id="view-rekap">
+      <div class="topbar">
+        <div>
+          <div class="pagetitle">Rekap Transaksi</div>
+          <div class="pagesub" id="rekap-sub">0 transaksi</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn secondary" id="btn-ai-classify">🤖 Klasifikasikan Ulang dengan AI</button>
+          <button class="btn secondary" id="btn-export-rekap">⬇ Unduh Rekap (Excel)</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="filters">
+          <input type="text" class="textinput grow" id="f-search" placeholder="Cari keterangan...">
+          <select id="f-kategori">
+            <option value="">Semua Kategori</option>
+            <option value="Pendapatan">Pendapatan</option>
+            <option value="OPEX">OPEX</option>
+            <option value="CAPEX">CAPEX</option>
+            <option value="Pengeluaran">Pengeluaran</option>
+          </select>
+          <select id="f-batch"><option value="">Semua Dokumen</option></select>
+        </div>
+
+        <div id="rekap-empty" class="empty" style="display:none;">
+          <h3>Belum ada transaksi</h3>
+          <p>Unggah dokumen terlebih dahulu di menu Unggah Dokumen.</p>
+        </div>
+
+        <div class="tablewrap" id="rekap-tablewrap" style="display:none;">
+          <table>
+            <thead>
+              <tr><th>Tanggal</th><th>Keterangan</th><th>Dokumen</th><th style="text-align:right;">Nominal</th><th>Kategori</th></tr>
+            </thead>
+            <tbody id="rekap-tbody"></tbody>
+          </table>
+        </div>
+        <div class="pagination" id="rekap-pagination" style="display:none;"></div>
+        <div class="ailog" id="ai-classify-log"></div>
+      </div>
+    </section>
+
+    <!-- AI ANALYSIS -->
+    <section class="view" id="view-ai">
+      <div class="topbar">
+        <div>
+          <div class="pagetitle">Analisis AI</div>
+          <div class="pagesub">Narasi profesional otomatis berdasarkan data yang telah diunggah</div>
+        </div>
+        <button class="btn" id="btn-generate-analysis">✨ Buat Analisis Baru</button>
+      </div>
+
+      <div class="card" id="ai-empty">
+        <div class="empty">
+          <h3>Belum ada analisis</h3>
+          <p>Unggah dokumen keuangan, lalu klik "Buat Analisis Baru" untuk mendapatkan ringkasan profesional dari AI.</p>
+        </div>
+      </div>
+
+      <div class="card analysis-body" id="ai-result" style="display:none;"></div>
+      <div class="ailog" id="ai-analysis-log"></div>
+    </section>
+
+    <!-- RIWAYAT -->
+    <section class="view" id="view-riwayat">
+      <div class="topbar">
+        <div>
+          <div class="pagetitle">Riwayat Unggahan</div>
+          <div class="pagesub">Semua dokumen yang pernah diimpor ke sistem</div>
+        </div>
+      </div>
+      <div class="card" id="riwayat-list">
+        <div class="empty"><h3>Belum ada riwayat</h3><p>Dokumen yang Anda unggah akan tercatat di sini.</p></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================= STATE ============================= */
+let STATE = { batches: [], transactions: [] };
+let donutChart = null, trendChart = null;
+let progCharts = {}, topCharts = {};
+let rekapPage = 0;
+const REKAP_PAGE_SIZE = 60;
+let pendingImport = null; // {rows, headers, headerRowIdx, sheetName, fileName}
+
+const CAT_COLORS = { Pendapatan:'#0E9488', OPEX:'#B8863B', CAPEX:'#3B4E9C', Pengeluaran:'#D14343' };
+
+/* ============================= UTIL ============================= */
+function fmtRp(n){
+  n = Math.round(Number(n)||0);
+  const neg = n < 0;
+  const s = Math.abs(n).toLocaleString('id-ID');
+  return (neg?'-Rp ':'Rp ') + s;
+}
+function fmtNum(n){ return Math.round(Number(n)||0).toLocaleString('id-ID'); }
+function uid(){ return 'x'+Math.random().toString(36).slice(2,10)+Date.now().toString(36); }
+function showToast(msg){
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(showToast._t); showToast._t=setTimeout(()=>t.classList.remove('show'),2600);
+}
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ============================= GAS BACKEND CONFIG =============================
+   Ganti URL di bawah dengan Web App URL hasil deploy Code.gs (lihat CARA_DEPLOY.md).
+   Semua data (transaksi, batch, analisis) kini tersimpan di Google Sheets — bukan lagi
+   di browser — sehingga bisa diakses dari perangkat mana pun selama tahu PIN akses. */
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbw-cqAshSVuh_P5IXtOpcZ8KJiJ14oPFRjOcmLzWDx3xufA0WQJD6yBOZx_EjknIoeJ0w/exec';
+
+async function callGAS(action, payload){
+  const res = await fetch(GAS_URL, {
+    method:'POST',
+    headers:{ 'Content-Type':'text/plain;charset=utf-8' }, // hindari CORS preflight ke Apps Script
+    body: JSON.stringify({ action, payload: payload||{} })
+  });
+  const json = await res.json();
+  if(!json.ok) throw new Error(json.error || 'Permintaan ke server gagal.');
+  return json.data;
+}
+
+/* ============================= PERSISTENCE (Google Sheets via Apps Script) ============================= */
+async function loadState(){
+  try{
+    const data = await callGAS('getData', {});
+    STATE.batches = data.batches || [];
+    STATE.transactions = data.transactions || [];
+  }catch(e){ console.error(e); showToast('Gagal memuat data dari server: '+e.message); }
+  try{
+    const a = await callGAS('getAnalysis', {});
+    if(a && a.text) renderAnalysis(a.text);
+  }catch(e){ console.error(e); }
+}
+/* saveState() lama (bulk-save ke localStorage) sudah tidak dipakai — setiap perubahan
+   (impor, ubah kategori, hapus batch) langsung memanggil endpoint GAS masing-masing,
+   lalu memuat ulang data agar semua perangkat melihat data yang sama. */
+async function saveState(){ /* no-op: lihat callGAS per-aksi */ }
+
+/* ============================= NAV ============================= */
+function goView(name){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  document.querySelectorAll('.navitem').forEach(b=>b.classList.toggle('active', b.dataset.view===name));
+  if(name==='dashboard') renderDashboard();
+  if(name==='rekap') renderRekap();
+  if(name==='riwayat') renderRiwayat();
+}
+document.getElementById('navlist').addEventListener('click', e=>{
+  const btn = e.target.closest('.navitem'); if(!btn) return;
+  goView(btn.dataset.view);
+});
+
+/* ============================= RULE-BASED CLASSIFIER ============================= */
+const KW = {
+  Pendapatan: ['pendapatan','jasa layanan','klaim bpjs','bpjs','retribusi','penjualan','jasa medis','rawat jalan','rawat inap','karcis','tarif','asuransi masuk','jasa dokter (in)','penerimaan pasien'],
+  CAPEX: ['pembelian aset','aset tetap','investasi','konstruksi','pembangunan','gedung','kendaraan','ambulance','ambulan','ct scan','usg','mesin','peralatan medis','alat kesehatan','alkes','renovasi besar','instalasi gas medis','inventaris kantor besar'],
+  OPEX: ['gaji','honor','lembur','tunjangan','listrik','air pdam','internet','telepon','obat','farmasi','bhp','atk','konsumsi','pemeliharaan','sewa','bbm','operasional','remunerasi','iuran','pajak','asuransi bpjs ketenagakerjaan','logistik','cleaning service','keamanan','satpam','diklat','pelatihan']
+};
+function classifyByKeyword(desc){
+  const d = (desc||'').toLowerCase();
+  for(const k of KW.CAPEX) if(d.includes(k)) return 'CAPEX';
+  for(const k of KW.Pendapatan) if(d.includes(k)) return 'Pendapatan';
+  for(const k of KW.OPEX) if(d.includes(k)) return 'OPEX';
+  return null;
+}
+function classifyByKodeAkun(kode){
+  if(kode==null || kode==='') return null;
+  const digits = String(kode).match(/\d+/);
+  if(!digits) return null;
+  const prefix = digits[0][0];
+  if(prefix==='4') return 'Pendapatan';
+  if(prefix==='6') return 'OPEX';
+  if(prefix==='1' && digits[0].length<=5 && Number(digits[0])>=13000) return 'CAPEX'; // aset tetap range heuristik
+  return null;
+}
+function classifyTransaction(tx){
+  let cat = classifyByKodeAkun(tx.kodeAkun);
+  let src = 'kode akun';
+  if(!cat){ cat = classifyByKeyword(tx.keterangan); src = 'kata kunci'; }
+  if(!cat){
+    cat = (tx.amount >= 0) ? 'Pendapatan' : 'Pengeluaran';
+    src = 'tanda nominal';
+  }
+  return { kategori: cat, sumber: src };
+}
+
+/* ============================= FILE UPLOAD FLOW ============================= */
+const dropzone = document.getElementById('dropzone');
+const fileinput = document.getElementById('fileinput');
+['dragenter','dragover'].forEach(ev=>dropzone.addEventListener(ev,e=>{e.preventDefault();dropzone.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>dropzone.addEventListener(ev,e=>{e.preventDefault();dropzone.classList.remove('drag');}));
+dropzone.addEventListener('drop', e=>{ const f=e.dataTransfer.files[0]; if(f) handleFile(f); });
+dropzone.addEventListener('click', e=>{ if(e.target.tagName!=='BUTTON') fileinput.click(); });
+fileinput.addEventListener('change', e=>{ const f=e.target.files[0]; if(f) handleFile(f); });
+
+const HEADER_KEYWORDS = ['tanggal','tgl','keterangan','uraian','deskripsi','nominal','jumlah','debit','kredit','kode akun','no akun','akun','masuk','keluar','total','saldo'];
+
+function handleFile(file){
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    try{
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, {type:'array', cellDates:true});
+      pendingImport = { wb, fileName: file.name };
+      const picker = document.getElementById('sheet-picker');
+      picker.innerHTML = wb.SheetNames.map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+      // guess best sheet: most rows
+      let best = wb.SheetNames[0], bestRows=0;
+      wb.SheetNames.forEach(n=>{
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1});
+        if(rows.length>bestRows){ bestRows=rows.length; best=n; }
+      });
+      picker.value = best;
+      document.getElementById('batch-name').value = file.name.replace(/\.[^/.]+$/,'');
+      document.getElementById('upload-steps').style.display = 'block';
+      loadSheetPreview();
+    }catch(err){
+      console.error(err);
+      showToast('Gagal membaca file. Pastikan format .xlsx/.xls/.csv valid.');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+document.getElementById('sheet-picker').addEventListener('change', loadSheetPreview);
+document.querySelectorAll('input[name="amtmode"]').forEach(r=>r.addEventListener('change', updateAmountModeUI));
+
+function updateAmountModeUI(){
+  const mode = document.querySelector('input[name="amtmode"]:checked').value;
+  document.getElementById('map-signed-wrap').style.display = mode==='signed' ? 'block':'none';
+  document.getElementById('map-split-in-wrap').style.display = mode==='split' ? 'block':'none';
+  document.getElementById('map-split-out-wrap').style.display = mode==='split' ? 'block':'none';
+}
+
+function loadSheetPreview(){
+  if(!pendingImport) return;
+  const sheetName = document.getElementById('sheet-picker').value;
+  const ws = pendingImport.wb.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+  // find header row: scan first 20 rows, score by keyword matches
+  let headerRowIdx = 0, bestScore = -1;
+  for(let i=0;i<Math.min(20, rows.length);i++){
+    const row = rows[i] || [];
+    let score = 0;
+    row.forEach(cell=>{
+      const c = String(cell||'').toLowerCase();
+      HEADER_KEYWORDS.forEach(k=>{ if(c.includes(k)) score++; });
+    });
+    if(score>bestScore){ bestScore=score; headerRowIdx=i; }
+  }
+  const headers = (rows[headerRowIdx]||[]).map((h,idx)=> String(h||'').trim() || ('Kolom '+(idx+1)) );
+  pendingImport.rows = rows;
+  pendingImport.headerRowIdx = headerRowIdx;
+  pendingImport.headers = headers;
+  pendingImport.sheetName = sheetName;
+
+  function fillSelect(sel, guessFn){
+    sel.innerHTML = '<option value="">— tidak dipakai —</option>' + headers.map((h,i)=>`<option value="${i}">${escapeHtml(h)}</option>`).join('');
+    const guess = guessFn(headers);
+    if(guess>=0) sel.value = guess;
+  }
+  const find = (keys)=> (headers)=>{
+    for(let i=0;i<headers.length;i++){
+      const h = headers[i].toLowerCase();
+      if(keys.some(k=>h.includes(k))) return i;
+    }
+    return -1;
+  };
+  fillSelect(document.getElementById('map-tanggal'), find(['tanggal','tgl']));
+  fillSelect(document.getElementById('map-keterangan'), find(['keterangan','uraian','deskripsi','nama akun','transaksi']));
+  fillSelect(document.getElementById('map-nominal'), find(['nominal','jumlah','total']));
+  fillSelect(document.getElementById('map-masuk'), find(['masuk','kredit','penerimaan','pendapatan']));
+  fillSelect(document.getElementById('map-keluar'), find(['keluar','debit','pengeluaran','pembayaran']));
+  fillSelect(document.getElementById('map-kode'), find(['kode akun','no akun','akun']));
+  updateAmountModeUI();
+}
+
+document.getElementById('btn-cancel-import').addEventListener('click', ()=>{
+  document.getElementById('upload-steps').style.display='none';
+  pendingImport = null;
+  fileinput.value = '';
+});
+
+document.getElementById('btn-import').addEventListener('click', async ()=>{
+  if(!pendingImport) return;
+  const log = document.getElementById('import-log');
+  const importBtn = document.getElementById('btn-import');
+  const mode = document.querySelector('input[name="amtmode"]:checked').value;
+  const iTgl = document.getElementById('map-tanggal').value;
+  const iKet = document.getElementById('map-keterangan').value;
+  const iNom = document.getElementById('map-nominal').value;
+  const iMasuk = document.getElementById('map-masuk').value;
+  const iKeluar = document.getElementById('map-keluar').value;
+  const iKode = document.getElementById('map-kode').value;
+  const batchName = document.getElementById('batch-name').value.trim() || pendingImport.fileName;
+
+  if(iKet===''){ showToast('Kolom Keterangan wajib dipilih agar transaksi bisa dikenali.'); return; }
+  if(mode==='signed' && iNom==='') { showToast('Pilih kolom Nominal.'); return; }
+  if(mode==='split' && iMasuk==='' && iKeluar===''){ showToast('Pilih minimal satu kolom Nominal Masuk/Keluar.'); return; }
+
+  const rows = pendingImport.rows.slice(pendingImport.headerRowIdx+1);
+  const batchId = uid();
+  let newTx = [];
+
+  function toNumber(v){
+    if(v===''||v==null) return 0;
+    if(typeof v==='number') return v;
+    const s = String(v).replace(/[^\d,.-]/g,'').replace(/\.(?=\d{3}(\D|$))/g,'').replace(',', '.');
+    const n = parseFloat(s);
+    return isNaN(n) ? 0 : n;
+  }
+  function toDateStr(v){
+    if(v==null||v==='') return '';
+    if(v instanceof Date) return v.toISOString().slice(0,10);
+    if(typeof v==='number'){
+      const d = new Date(Math.round((v-25569)*86400*1000));
+      if(!isNaN(d)) return d.toISOString().slice(0,10);
+    }
+    return String(v).trim();
+  }
+
+  rows.forEach(row=>{
+    const ket = iKet!=='' ? row[iKet] : '';
+    if(!ket || String(ket).trim()==='') return;
+    let amount = 0;
+    if(mode==='signed'){
+      amount = toNumber(row[iNom]);
+    }else{
+      const masuk = iMasuk!=='' ? toNumber(row[iMasuk]) : 0;
+      const keluar = iKeluar!=='' ? toNumber(row[iKeluar]) : 0;
+      amount = masuk - Math.abs(keluar);
+    }
+    if(amount===0 && mode==='split'){
+      const masuk = iMasuk!=='' ? toNumber(row[iMasuk]) : 0;
+      const keluar = iKeluar!=='' ? toNumber(row[iKeluar]) : 0;
+      if(masuk===0 && keluar===0) return;
+    }
+    const tx = {
+      id: uid(),
+      batchId,
+      tanggal: iTgl!=='' ? toDateStr(row[iTgl]) : '',
+      keterangan: String(ket).trim(),
+      kodeAkun: iKode!=='' ? String(row[iKode]||'').trim() : '',
+      amount: amount,
+    };
+    const c = classifyTransaction(tx);
+    tx.kategori = c.kategori;
+    tx.sumberKategori = c.sumber;
+    newTx.push(tx);
+  });
+
+  if(newTx.length===0){ showToast('Tidak ada baris transaksi yang terbaca. Cek pemetaan kolom.'); return; }
+
+  const batch = { id: batchId, name: batchName, sheet: pendingImport.sheetName, uploadedAt: new Date().toISOString(), rowCount: newTx.length };
+
+  importBtn.disabled = true;
+  log.innerHTML = `<span class="spinner"></span> Menyimpan ${newTx.length} transaksi ke Google Sheets...`;
+  try{
+    await callGAS('importBatch', { batch, transactions: newTx });
+    await loadState();
+    log.textContent = `Berhasil mengimpor ${newTx.length} transaksi dari "${batchName}".`;
+    showToast(`${newTx.length} transaksi berhasil diimpor`);
+    document.getElementById('upload-steps').style.display='none';
+    pendingImport = null;
+    fileinput.value = '';
+    goView('dashboard');
+  }catch(err){
+    console.error(err);
+    log.textContent = 'Gagal menyimpan ke server: ' + err.message;
+    showToast('Gagal menyimpan ke Google Sheets. Cek koneksi/GAS_URL.');
+  }
+  importBtn.disabled = false;
+});
+
+/* ============================= DASHBOARD ============================= */
+function renderDashboard(){
+  const tx = STATE.transactions;
+  if(tx.length===0){
+    document.getElementById('dash-empty').style.display='block';
+    document.getElementById('dash-content').style.display='none';
+    return;
+  }
+  document.getElementById('dash-empty').style.display='none';
+  document.getElementById('dash-content').style.display='block';
+
+  const dates = tx.map(t=>t.tanggal).filter(Boolean).sort();
+  document.getElementById('dash-period').textContent = dates.length
+    ? `Periode data: ${dates[0]} s.d. ${dates[dates.length-1]} · ${STATE.batches.length} dokumen diunggah`
+    : `${STATE.batches.length} dokumen diunggah · ${tx.length} transaksi`;
+
+  const sums = { Pendapatan:0, OPEX:0, CAPEX:0, Pengeluaran:0 };
+  tx.forEach(t=>{ sums[t.kategori] = (sums[t.kategori]||0) + Math.abs(t.amount); });
+  const totalOut = sums.OPEX + sums.CAPEX + sums.Pengeluaran;
+  const totalFlow = sums.Pendapatan + totalOut || 1;
+
+  document.getElementById('kpi-pendapatan').textContent = fmtRp(sums.Pendapatan);
+  document.getElementById('kpi-opex').textContent = fmtRp(sums.OPEX);
+  document.getElementById('kpi-capex').textContent = fmtRp(sums.CAPEX);
+  document.getElementById('kpi-pengeluaran').textContent = fmtRp(sums.Pengeluaran);
+  document.getElementById('kpi-pendapatan-pct').textContent = ((sums.Pendapatan/totalFlow)*100).toFixed(1)+'% dari total arus kas';
+  document.getElementById('kpi-opex-pct').textContent = ((sums.OPEX/totalFlow)*100).toFixed(1)+'% dari total arus kas';
+  document.getElementById('kpi-capex-pct').textContent = ((sums.CAPEX/totalFlow)*100).toFixed(1)+'% dari total arus kas';
+  document.getElementById('kpi-pengeluaran-pct').textContent = ((sums.Pengeluaran/totalFlow)*100).toFixed(1)+'% dari total arus kas';
+
+  const net = sums.Pendapatan - totalOut;
+  const netEl = document.getElementById('kpi-net');
+  netEl.textContent = fmtRp(net);
+  netEl.style.color = net>=0 ? 'var(--green)' : 'var(--red)';
+  document.getElementById('kpi-net-sub').textContent = net>=0 ? 'Surplus arus kas' : 'Defisit arus kas — pengeluaran melebihi pendapatan';
+  document.getElementById('kpi-count').textContent = fmtNum(tx.length);
+  document.getElementById('kpi-count-sub').textContent = `dari ${STATE.batches.length} dokumen`;
+
+  // Donut
+  const ctx1 = document.getElementById('chart-donut').getContext('2d');
+  if(donutChart) donutChart.destroy();
+  donutChart = new Chart(ctx1, {
+    type:'doughnut',
+    data:{ labels:['Pendapatan','OPEX','CAPEX','Pengeluaran'],
+      datasets:[{ data:[sums.Pendapatan,sums.OPEX,sums.CAPEX,sums.Pengeluaran],
+        backgroundColor:[CAT_COLORS.Pendapatan,CAT_COLORS.OPEX,CAT_COLORS.CAPEX,CAT_COLORS.Pengeluaran], borderWidth:0 }]},
+    options:{ plugins:{ legend:{ position:'bottom', labels:{color:'#63798A', font:{size:11.5}} } }, cutout:'62%' }
+  });
+
+  // Trend by month (per category)
+  const byMonth = {};
+  tx.forEach(t=>{
+    if(!t.tanggal) return;
+    const m = t.tanggal.slice(0,7);
+    if(!byMonth[m]) byMonth[m] = {Pendapatan:0, OPEX:0, CAPEX:0, Pengeluaran:0};
+    byMonth[m][t.kategori] = (byMonth[m][t.kategori]||0) + Math.abs(t.amount);
+  });
+  const months = Object.keys(byMonth).sort();
+  const ctx2 = document.getElementById('chart-trend').getContext('2d');
+  if(trendChart) trendChart.destroy();
+  if(months.length===0){
+    ctx2.font = '13px Inter'; ctx2.fillStyle = '#63798A';
+    ctx2.fillText('Data tanggal tidak tersedia pada dokumen yang diunggah.', 10, 30);
+  }else{
+    trendChart = new Chart(ctx2, {
+      type:'bar',
+      data:{ labels: months,
+        datasets:[
+          { label:'Pendapatan', data: months.map(m=>byMonth[m].Pendapatan), backgroundColor: CAT_COLORS.Pendapatan, borderRadius:4 },
+          { label:'Pengeluaran (OPEX+CAPEX+Lain)', data: months.map(m=>byMonth[m].OPEX+byMonth[m].CAPEX+byMonth[m].Pengeluaran), backgroundColor: '#C7524F', borderRadius:4 },
+        ]},
+      options:{ scales:{ x:{ grid:{display:false} }, y:{ grid:{color:'#EEF2F4'}, ticks:{ callback:v=>fmtNum(v) } } },
+        plugins:{ legend:{ position:'bottom', labels:{color:'#63798A', font:{size:11}} } } }
+    });
+  }
+
+  // Progress mini-charts per category (month over month)
+  renderProgressCharts(months, byMonth);
+
+  // Top items per expense category
+  renderTopItemsCharts(tx);
+}
+
+function renderProgressCharts(months, byMonth){
+  const configs = [
+    { id:'chart-prog-pendapatan', key:'Pendapatan', color: CAT_COLORS.Pendapatan },
+    { id:'chart-prog-opex', key:'OPEX', color: CAT_COLORS.OPEX },
+    { id:'chart-prog-capex', key:'CAPEX', color: CAT_COLORS.CAPEX },
+    { id:'chart-prog-pengeluaran', key:'Pengeluaran', color: CAT_COLORS.Pengeluaran },
+  ];
+  configs.forEach(cfg=>{
+    const canvas = document.getElementById(cfg.id);
+    const ctx = canvas.getContext('2d');
+    if(progCharts[cfg.id]) progCharts[cfg.id].destroy();
+    if(months.length===0){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.font = '11px Inter'; ctx.fillStyle = '#63798A';
+      ctx.fillText('Tanpa data tanggal', 6, 20);
+      return;
+    }
+    const data = months.map(m=>byMonth[m][cfg.key]||0);
+    const last = data[data.length-1]||0, prev = data.length>1 ? (data[data.length-2]||0) : null;
+    progCharts[cfg.id] = new Chart(ctx, {
+      type:'line',
+      data:{ labels: months.map(m=>m.slice(5)+'/'+m.slice(2,4)),
+        datasets:[{ data, borderColor:cfg.color, backgroundColor:cfg.color+'22', fill:true, tension:.3, pointRadius:2.5, pointBackgroundColor:cfg.color, borderWidth:2 }]},
+      options:{
+        plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label: c=>fmtRp(c.parsed.y) } } },
+        scales:{ x:{ grid:{display:false}, ticks:{color:'#8CA3B4', font:{size:9.5}} }, y:{ display:false } },
+        maintainAspectRatio:false
+      }
+    });
+    // annotate current value + delta text below via DOM sibling
+    let note = canvas.parentElement.querySelector('.prog-note');
+    if(!note){ note = document.createElement('div'); note.className='prog-note'; note.style.cssText='font-size:11px;color:var(--muted);margin-top:6px;'; canvas.parentElement.appendChild(note); }
+    if(prev!==null && prev!==0){
+      const delta = ((last-prev)/prev*100);
+      const up = delta>=0;
+      note.innerHTML = `Bulan terakhir: <strong style="color:var(--text)">${fmtRp(last)}</strong> <span style="color:${up?'var(--green)':'var(--red)'}">${up?'▲':'▼'} ${Math.abs(delta).toFixed(1)}%</span> vs bulan sebelumnya`;
+    }else{
+      note.innerHTML = `Bulan terakhir: <strong style="color:var(--text)">${fmtRp(last)}</strong>`;
+    }
+  });
+}
+
+function renderTopItemsCharts(tx){
+  const configs = [
+    { id:'chart-top-opex', key:'OPEX', color: CAT_COLORS.OPEX },
+    { id:'chart-top-capex', key:'CAPEX', color: CAT_COLORS.CAPEX },
+    { id:'chart-top-pengeluaran', key:'Pengeluaran', color: CAT_COLORS.Pengeluaran },
+  ];
+  configs.forEach(cfg=>{
+    const grouped = {};
+    tx.filter(t=>t.kategori===cfg.key).forEach(t=>{
+      const label = t.keterangan.trim();
+      grouped[label] = (grouped[label]||0) + Math.abs(t.amount);
+    });
+    const entries = Object.entries(grouped).sort((a,b)=>b[1]-a[1]).slice(0,6);
+    const canvas = document.getElementById(cfg.id);
+    const ctx = canvas.getContext('2d');
+    if(topCharts[cfg.id]) topCharts[cfg.id].destroy();
+    if(entries.length===0){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.font = '12px Inter'; ctx.fillStyle = '#63798A';
+      ctx.fillText('Belum ada transaksi ' + cfg.key, 10, 30);
+      return;
+    }
+    const labels = entries.map(e=> e[0].length>26 ? e[0].slice(0,24)+'…' : e[0]);
+    const values = entries.map(e=>e[1]);
+    topCharts[cfg.id] = new Chart(ctx, {
+      type:'bar',
+      data:{ labels, datasets:[{ data: values, backgroundColor: cfg.color, borderRadius:4 }] },
+      options:{
+        indexAxis:'y',
+        plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:c=>fmtRp(c.parsed.x) } } },
+        scales:{ x:{ grid:{color:'#EEF2F4'}, ticks:{ callback:v=>fmtNum(v), font:{size:10} } }, y:{ grid:{display:false}, ticks:{ font:{size:11} } } }
+      }
+    });
+  });
+}
+
+/* ============================= REKAP ============================= */
+function currentFilteredTx(){
+  const q = document.getElementById('f-search').value.trim().toLowerCase();
+  const kat = document.getElementById('f-kategori').value;
+  const batch = document.getElementById('f-batch').value;
+  return STATE.transactions.filter(t=>{
+    if(q && !t.keterangan.toLowerCase().includes(q)) return false;
+    if(kat && t.kategori!==kat) return false;
+    if(batch && t.batchId!==batch) return false;
+    return true;
+  }).sort((a,b)=> (b.tanggal||'').localeCompare(a.tanggal||''));
+}
+
+function renderRekap(){
+  const batchSel = document.getElementById('f-batch');
+  const cur = batchSel.value;
+  batchSel.innerHTML = '<option value="">Semua Dokumen</option>' + STATE.batches.map(b=>`<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('');
+  batchSel.value = cur;
+
+  const tx = currentFilteredTx();
+  document.getElementById('rekap-sub').textContent = `${fmtNum(tx.length)} transaksi ditemukan · ${fmtNum(STATE.transactions.length)} total`;
+
+  if(STATE.transactions.length===0){
+    document.getElementById('rekap-empty').style.display='block';
+    document.getElementById('rekap-tablewrap').style.display='none';
+    document.getElementById('rekap-pagination').style.display='none';
+    return;
+  }
+  document.getElementById('rekap-empty').style.display='none';
+  document.getElementById('rekap-tablewrap').style.display='block';
+  document.getElementById('rekap-pagination').style.display='flex';
+
+  const totalPages = Math.max(1, Math.ceil(tx.length / REKAP_PAGE_SIZE));
+  if(rekapPage >= totalPages) rekapPage = totalPages-1;
+  const pageTx = tx.slice(rekapPage*REKAP_PAGE_SIZE, (rekapPage+1)*REKAP_PAGE_SIZE);
+  const batchMap = {}; STATE.batches.forEach(b=>batchMap[b.id]=b.name);
+
+  document.getElementById('rekap-tbody').innerHTML = pageTx.map(t=>{
+    const amtClass = t.amount>=0 ? 'amt-in' : 'amt-out';
+    return `<tr data-id="${t.id}">
+      <td>${escapeHtml(t.tanggal||'—')}</td>
+      <td>${escapeHtml(t.keterangan)}</td>
+      <td style="color:var(--muted);font-size:11.5px;">${escapeHtml(batchMap[t.batchId]||'—')}</td>
+      <td style="text-align:right;" class="mono ${amtClass}">${fmtRp(t.amount)}</td>
+      <td>
+        <div class="catmenu">
+          <span class="tag ${t.kategori}" onclick="toggleCatMenu(event,'${t.id}')">${t.kategori} ▾</span>
+          <div class="catmenu-list">
+            ${['Pendapatan','OPEX','CAPEX','Pengeluaran'].map(c=>`<button onclick="setCategoryManual('${t.id}','${c}')">${c}</button>`).join('')}
+          </div>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('rekap-pagination').innerHTML = `
+    <span>Hal ${rekapPage+1} dari ${totalPages}</span>
+    <button ${rekapPage===0?'disabled':''} onclick="rekapPage--;renderRekap();">‹ Sebelumnya</button>
+    <button ${rekapPage>=totalPages-1?'disabled':''} onclick="rekapPage++;renderRekap();">Berikutnya ›</button>
+  `;
+}
+function toggleCatMenu(e, id){
+  e.stopPropagation();
+  document.querySelectorAll('.catmenu.open').forEach(m=>{ if(m!==e.currentTarget.parentElement) m.classList.remove('open'); });
+  e.currentTarget.parentElement.classList.toggle('open');
+}
+document.addEventListener('click', ()=> document.querySelectorAll('.catmenu.open').forEach(m=>m.classList.remove('open')) );
+async function setCategoryManual(id, cat){
+  const t = STATE.transactions.find(t=>t.id===id);
+  if(!t) return;
+  const prevCat = t.kategori;
+  t.kategori = cat; t.sumberKategori = 'manual'; // optimistic update
+  renderRekap();
+  try{
+    await callGAS('updateCategory', { id, kategori: cat });
+    showToast('Kategori diperbarui');
+    renderDashboard();
+  }catch(err){
+    t.kategori = prevCat; // rollback on failure
+    renderRekap();
+    showToast('Gagal menyimpan ke server: ' + err.message);
+  }
+}
+['f-search','f-kategori','f-batch'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', ()=>{ rekapPage=0; renderRekap(); });
+});
+
+/* ============================= RIWAYAT ============================= */
+function renderRiwayat(){
+  const el = document.getElementById('riwayat-list');
+  if(STATE.batches.length===0){
+    el.innerHTML = `<div class="empty"><h3>Belum ada riwayat</h3><p>Dokumen yang Anda unggah akan tercatat di sini.</p></div>`;
+    return;
+  }
+  el.innerHTML = STATE.batches.slice().reverse().map(b=>{
+    const d = new Date(b.uploadedAt);
+    return `<div class="histitem">
+      <div>
+        <div style="font-weight:600;font-size:13.5px;">${escapeHtml(b.name)}</div>
+        <div class="histmeta">${b.rowCount} transaksi · sheet "${escapeHtml(b.sheet||'-')}" · diunggah ${d.toLocaleDateString('id-ID')} ${d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}</div>
+      </div>
+      <button class="btn danger" onclick="deleteBatch('${b.id}')">Hapus</button>
+    </div>`;
+  }).join('');
+}
+async function deleteBatch(id){
+  if(!confirm('Hapus dokumen ini beserta seluruh transaksinya? Tindakan ini tidak dapat dibatalkan.')) return;
+  try{
+    await callGAS('deleteBatch', { batchId: id });
+    await loadState();
+    renderRiwayat();
+    renderDashboard();
+    showToast('Dokumen dihapus');
+  }catch(err){
+    showToast('Gagal menghapus di server: ' + err.message);
+  }
+}
+
+/* ============================= EXPORT ============================= */
+function exportRekap(){
+  if(STATE.transactions.length===0){ showToast('Belum ada data untuk diunduh.'); return; }
+  const sums = { Pendapatan:0, OPEX:0, CAPEX:0, Pengeluaran:0 };
+  STATE.transactions.forEach(t=> sums[t.kategori]=(sums[t.kategori]||0)+Math.abs(t.amount) );
+  const total = Object.values(sums).reduce((a,b)=>a+b,0) || 1;
+
+  const summaryRows = [
+    ['RSU ALLAM MEDICA — REKAP ANALISIS KEUANGAN (SIAK-RS)'],
+    ['Diunduh pada', new Date().toLocaleString('id-ID')],
+    [],
+    ['Kategori','Total (Rp)','Porsi (%)'],
+    ['Pendapatan', sums.Pendapatan, ((sums.Pendapatan/total)*100).toFixed(1)+'%'],
+    ['OPEX', sums.OPEX, ((sums.OPEX/total)*100).toFixed(1)+'%'],
+    ['CAPEX', sums.CAPEX, ((sums.CAPEX/total)*100).toFixed(1)+'%'],
+    ['Pengeluaran Lain', sums.Pengeluaran, ((sums.Pengeluaran/total)*100).toFixed(1)+'%'],
+    ['TOTAL', total, '100%'],
+  ];
+  const batchMap = {}; STATE.batches.forEach(b=>batchMap[b.id]=b.name);
+  const detailRows = [['Tanggal','Keterangan','Dokumen Sumber','Kode Akun','Nominal','Kategori','Sumber Klasifikasi']]
+    .concat(STATE.transactions.slice().sort((a,b)=>(a.tanggal||'').localeCompare(b.tanggal||'')).map(t=>[
+      t.tanggal||'', t.keterangan, batchMap[t.batchId]||'', t.kodeAkun||'', t.amount, t.kategori, t.sumberKategori||''
+    ]));
+
+  const wb = XLSX.utils.book_new();
+  const ws1 = XLSX.utils.aoa_to_sheet(summaryRows);
+  ws1['!cols'] = [{wch:22},{wch:18},{wch:12}];
+  const ws2 = XLSX.utils.aoa_to_sheet(detailRows);
+  ws2['!cols'] = [{wch:12},{wch:40},{wch:22},{wch:12},{wch:16},{wch:14},{wch:16}];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Ringkasan');
+  XLSX.utils.book_append_sheet(wb, ws2, 'Rekap Transaksi');
+  XLSX.writeFile(wb, `Rekap_Keuangan_SIAK-RS_${new Date().toISOString().slice(0,10)}.xlsx`);
+  showToast('File rekap sedang diunduh...');
+}
+document.getElementById('btn-export-dash').addEventListener('click', exportRekap);
+document.getElementById('btn-export-rekap').addEventListener('click', exportRekap);
+
+/* ============================= AI CALL (via Google Apps Script) =============================
+   Panggilan langsung ke api.anthropic.com dari browser akan diblokir (perlu API key rahasia +
+   CORS). Permintaan diarahkan ke Apps Script (GAS_URL) yang menyimpan API key dengan aman
+   di Script Properties dan meneruskannya ke Anthropic (lihat Code.gs -> actionAiProxy). */
+async function callClaude(userText, maxTokens){
+  const data = await callGAS('aiProxy', {
+    model: 'claude-sonnet-4-6',
+    max_tokens: maxTokens || 1000,
+    messages: [{ role:'user', content: userText }]
+  });
+  const textBlocks = (data.content||[]).filter(c=>c.type==='text').map(c=>c.text);
+  return textBlocks.join('\n');
+}
+
+document.getElementById('btn-ai-classify').addEventListener('click', async ()=>{
+  const log = document.getElementById('ai-classify-log');
+  const btn = document.getElementById('btn-ai-classify');
+  // reclassify transactions whose source is keyword/tanda-nominal fallback (least confident)
+  const targets = STATE.transactions.filter(t=> t.sumberKategori==='tanda nominal' || t.sumberKategori==='kata kunci');
+  if(targets.length===0){ showToast('Semua transaksi sudah terklasifikasi dengan tingkat keyakinan baik.'); return; }
+  btn.disabled = true;
+  const BATCH = 40;
+  let done = 0;
+  const pendingUpdates = [];
+  for(let i=0;i<targets.length;i+=BATCH){
+    const chunk = targets.slice(i, i+BATCH);
+    log.innerHTML = `<span class="spinner"></span> Mengklasifikasikan ${Math.min(i+BATCH,targets.length)} dari ${targets.length} transaksi...`;
+    const listText = chunk.map((t,idx)=>`${idx}: ${t.keterangan} (${t.amount>=0?'masuk':'keluar'} Rp${Math.round(Math.abs(t.amount))})`).join('\n');
+    const prompt = `Anda adalah akuntan rumah sakit. Klasifikasikan setiap transaksi kas berikut ke SATU kategori: "Pendapatan" (uang masuk dari layanan/pasien/klaim/jasa), "OPEX" (biaya operasional rutin: gaji, obat, listrik, pemeliharaan, sewa, dll), "CAPEX" (pembelian aset tetap/investasi besar: alat kesehatan, gedung, kendaraan, konstruksi), atau "Pengeluaran" (uang keluar lain di luar OPEX/CAPEX, misal pembayaran hutang/transfer).
+
+Transaksi:
+${listText}
+
+Balas HANYA dengan JSON array valid, tanpa teks/markdown lain, format persis: [{"i":0,"k":"OPEX"},{"i":1,"k":"Pendapatan"}]`;
+    try{
+      const raw = await callClaude(prompt, 1000);
+      const clean = raw.replace(/```json|```/g,'').trim();
+      const arr = JSON.parse(clean);
+      arr.forEach(item=>{
+        const tx = chunk[item.i];
+        if(tx && ['Pendapatan','OPEX','CAPEX','Pengeluaran'].includes(item.k)){
+          tx.kategori = item.k; tx.sumberKategori = 'AI';
+          pendingUpdates.push({ id: tx.id, kategori: item.k, sumberKategori: 'AI' });
+          done++;
+        }
+      });
+    }catch(err){
+      console.error('AI classify error', err);
+    }
+  }
+  if(pendingUpdates.length > 0){
+    log.innerHTML = `<span class="spinner"></span> Menyimpan ${pendingUpdates.length} perubahan ke Google Sheets...`;
+    try{
+      await callGAS('bulkUpdateCategories', { updates: pendingUpdates });
+    }catch(err){
+      console.error(err);
+      showToast('Klasifikasi selesai, tapi gagal menyimpan sebagian ke server.');
+    }
+  }
+  log.textContent = `Selesai. ${done} transaksi diklasifikasikan ulang oleh AI.`;
+  showToast(`AI memperbarui kategori ${done} transaksi`);
+  btn.disabled = false;
+  renderRekap();
+  renderDashboard();
+});
+
+/* ============================= AI: NARRATIVE ANALYSIS ============================= */
+function simpleMarkdown(text){
+  let html = escapeHtml(text);
+  html = html.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+  const lines = html.split('\n');
+  let out = '', inList = false;
+  lines.forEach(line=>{
+    const trimmed = line.trim();
+    if(/^[-•]\s+/.test(trimmed)){
+      if(!inList){ out += '<ul>'; inList = true; }
+      out += `<li>${trimmed.replace(/^[-•]\s+/,'')}</li>`;
+    }else{
+      if(inList){ out += '</ul>'; inList=false; }
+      if(trimmed==='') out += '';
+      else out += `<p>${trimmed}</p>`;
+    }
+  });
+  if(inList) out += '</ul>';
+  return out;
+}
+function renderAnalysis(text){
+  document.getElementById('ai-empty').style.display='none';
+  const el = document.getElementById('ai-result');
+  el.style.display='block';
+  el.innerHTML = simpleMarkdown(text);
+}
+
+document.getElementById('btn-generate-analysis').addEventListener('click', async ()=>{
+  if(STATE.transactions.length===0){ showToast('Unggah dokumen terlebih dahulu.'); return; }
+  const log = document.getElementById('ai-analysis-log');
+  const btn = document.getElementById('btn-generate-analysis');
+  btn.disabled = true;
+  log.innerHTML = `<span class="spinner"></span> AI sedang menyusun analisis...`;
+
+  const sums = { Pendapatan:0, OPEX:0, CAPEX:0, Pengeluaran:0 };
+  STATE.transactions.forEach(t=> sums[t.kategori]=(sums[t.kategori]||0)+Math.abs(t.amount) );
+  const total = Object.values(sums).reduce((a,b)=>a+b,0)||1;
+  const net = sums.Pendapatan - (sums.OPEX+sums.CAPEX+sums.Pengeluaran);
+
+  // top 5 items per category by amount for context
+  const topByCat = {};
+  ['OPEX','CAPEX','Pengeluaran'].forEach(cat=>{
+    topByCat[cat] = STATE.transactions.filter(t=>t.kategori===cat)
+      .sort((a,b)=>Math.abs(b.amount)-Math.abs(a.amount)).slice(0,5)
+      .map(t=>`${t.keterangan}: Rp${fmtNum(Math.abs(t.amount))}`);
+  });
+
+  const dates = STATE.transactions.map(t=>t.tanggal).filter(Boolean).sort();
+  const period = dates.length ? `${dates[0]} s.d. ${dates[dates.length-1]}` : 'tidak diketahui';
+
+  const prompt = `Anda adalah analis keuangan rumah sakit senior. Berdasarkan data agregat berikut, tulis analisis keuangan profesional dalam Bahasa Indonesia (sekitar 220-300 kata), dengan format:
+
+**Ringkasan** (1 paragraf singkat)
+**Insight Utama** (3-5 poin bullet menggunakan tanda "-")
+**Rekomendasi** (2-4 poin bullet menggunakan tanda "-")
+
+Jangan gunakan markdown selain **tebal** untuk judul bagian dan tanda "-" untuk bullet. Jangan tambahkan judul dokumen.
+
+Data:
+- Periode: ${period}
+- Total Pendapatan: Rp${fmtNum(sums.Pendapatan)}
+- Total OPEX: Rp${fmtNum(sums.OPEX)}
+- Total CAPEX: Rp${fmtNum(sums.CAPEX)}
+- Total Pengeluaran Lain: Rp${fmtNum(sums.Pengeluaran)}
+- Selisih (Pendapatan - Total Pengeluaran): Rp${fmtNum(net)}
+- Jumlah transaksi: ${STATE.transactions.length}
+- 5 item OPEX terbesar: ${topByCat.OPEX.join('; ')||'-'}
+- 5 item CAPEX terbesar: ${topByCat.CAPEX.join('; ')||'-'}
+- 5 item Pengeluaran lain terbesar: ${topByCat.Pengeluaran.join('; ')||'-'}`;
+
+  try{
+    const text = await callClaude(prompt, 900);
+    renderAnalysis(text);
+    await callGAS('saveAnalysis', { text });
+    log.textContent = 'Analisis berhasil dibuat.';
+  }catch(err){
+    console.error(err);
+    log.textContent = 'Gagal membuat analisis. Coba lagi.';
+    showToast('Gagal menghubungi AI. Coba lagi.');
+  }
+  btn.disabled = false;
+});
+
+/* ============================= PIN GATE ============================= */
+async function startApp(){
+  document.getElementById('pin-overlay').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  await loadState();
+  renderDashboard();
+  renderRekap();
+  renderRiwayat();
+}
+
+async function trySubmitPin(){
+  const pin = document.getElementById('pin-input').value.trim();
+  const errEl = document.getElementById('pin-error');
+  const btn = document.getElementById('pin-submit');
+  if(!pin){ errEl.textContent = 'PIN wajib diisi.'; return; }
+  btn.disabled = true; errEl.textContent = '';
+  try{
+    const res = await callGAS('checkPin', { pin });
+    if(res.valid){
+      sessionStorage.setItem('siak-rs-pin-ok', '1');
+      startApp();
+    }else{
+      errEl.textContent = 'PIN salah. Coba lagi.';
+    }
+  }catch(err){
+    errEl.textContent = 'Gagal menghubungi server: ' + err.message;
+  }
+  btn.disabled = false;
+}
+document.getElementById('pin-submit').addEventListener('click', trySubmitPin);
+document.getElementById('pin-input').addEventListener('keydown', e=>{ if(e.key==='Enter') trySubmitPin(); });
+
+/* ============================= INIT ============================= */
+(function init(){
+  if(sessionStorage.getItem('siak-rs-pin-ok')==='1'){
+    startApp();
+  }else{
+    document.getElementById('pin-input').focus();
+  }
+})();
+</script>
+</body>
+</html>
