@@ -573,6 +573,16 @@
       </div>
 
       <div class="card">
+        <div class="filters">
+          <label style="font-size:11.5px;color:var(--muted);">Bulan</label>
+          <select id="opex-bulan"><option value="">Semua Periode</option></select>
+          <label style="font-size:11.5px;color:var(--muted);">Dari</label>
+          <input type="date" class="textinput" id="opex-tgl-dari">
+          <label style="font-size:11.5px;color:var(--muted);">Sampai</label>
+          <input type="date" class="textinput" id="opex-tgl-sampai">
+          <button class="btn ghost" id="btn-opex-reset-tgl" type="button" style="font-size:12px;padding:8px 14px;">Reset</button>
+        </div>
+
         <div id="opex-empty" class="empty" style="display:none;">
           <h3>Belum ada transaksi OPEX</h3>
           <p>Transaksi berkategori OPEX akan muncul di sini secara otomatis setelah diunggah/diklasifikasikan.</p>
@@ -608,6 +618,16 @@
       </div>
 
       <div class="card">
+        <div class="filters">
+          <label style="font-size:11.5px;color:var(--muted);">Bulan</label>
+          <select id="capex-bulan"><option value="">Semua Periode</option></select>
+          <label style="font-size:11.5px;color:var(--muted);">Dari</label>
+          <input type="date" class="textinput" id="capex-tgl-dari">
+          <label style="font-size:11.5px;color:var(--muted);">Sampai</label>
+          <input type="date" class="textinput" id="capex-tgl-sampai">
+          <button class="btn ghost" id="btn-capex-reset-tgl" type="button" style="font-size:12px;padding:8px 14px;">Reset</button>
+        </div>
+
         <div id="capex-empty" class="empty" style="display:none;">
           <h3>Belum ada transaksi CAPEX</h3>
           <p>Transaksi berkategori CAPEX akan muncul di sini secara otomatis setelah diunggah/diklasifikasikan.</p>
@@ -648,6 +668,8 @@
 
       <div class="card">
         <div class="filters">
+          <label style="font-size:11.5px;color:var(--muted);">Bulan</label>
+          <select id="pl-bulan"><option value="">Semua Periode</option></select>
           <label style="font-size:11.5px;color:var(--muted);">Dari</label>
           <input type="date" class="textinput" id="pl-tgl-dari">
           <label style="font-size:11.5px;color:var(--muted);">Sampai</label>
@@ -1543,9 +1565,58 @@ function renderCategoryDetailList(tbodyId, tx){
     </tr>`).join('');
 }
 
+/** Mengisi dropdown "Bulan" dengan daftar bulan yang benar-benar ada di data kategori tersebut
+ *  (dihitung dari SELURUH transaksi kategori itu, tidak ikut dibatasi oleh filter tanggal yang
+ *  sedang aktif, supaya pilihan bulan tidak hilang begitu sebuah bulan dipilih). */
+function populateMonthSelect(selectId, kategori){
+  const monthsSet = new Set();
+  STATE.transactions.forEach(t=>{
+    if(t.kategori===kategori && /^\d{4}-\d{2}-\d{2}$/.test(t.tanggal)) monthsSet.add(t.tanggal.slice(0,7));
+  });
+  const months = Array.from(monthsSet).sort().reverse();
+  const sel = document.getElementById(selectId);
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">Semua Periode</option>' + months.map(m=>{
+    const label = new Date(m+'-01').toLocaleDateString('id-ID',{month:'long',year:'numeric'});
+    return `<option value="${m}">${label}</option>`;
+  }).join('');
+  if(months.includes(cur)) sel.value = cur;
+}
+
+/** Saat dropdown "Bulan" dipilih, isi otomatis tanggal Dari/Sampai dengan tanggal 1 s.d. akhir
+ *  bulan tersebut (atau kosongkan keduanya untuk "Semua Periode"), lalu jalankan renderFn. */
+function wireMonthRangeFilter(bulanId, dariId, sampaiId, resetBtnId, renderFn){
+  document.getElementById(bulanId).addEventListener('change', ()=>{
+    const m = document.getElementById(bulanId).value;
+    if(m){
+      const [y, mo] = m.split('-').map(Number);
+      const lastDay = new Date(y, mo, 0).getDate();
+      document.getElementById(dariId).value = `${m}-01`;
+      document.getElementById(sampaiId).value = `${m}-${String(lastDay).padStart(2,'0')}`;
+    }else{
+      document.getElementById(dariId).value = '';
+      document.getElementById(sampaiId).value = '';
+    }
+    renderFn();
+  });
+  [dariId, sampaiId].forEach(id=>{
+    document.getElementById(id).addEventListener('change', renderFn);
+  });
+  document.getElementById(resetBtnId).addEventListener('click', ()=>{
+    document.getElementById(bulanId).value = '';
+    document.getElementById(dariId).value = '';
+    document.getElementById(sampaiId).value = '';
+    renderFn();
+  });
+}
+
 function renderCapexDetail(){
-  const pivot = buildCategoryPivot('CAPEX');
-  document.getElementById('capex-sub').textContent = `${pivot.tx.length} transaksi CAPEX`;
+  populateMonthSelect('capex-bulan', 'CAPEX');
+  const dari = document.getElementById('capex-tgl-dari').value;
+  const sampai = document.getElementById('capex-tgl-sampai').value;
+  const pivot = buildCategoryPivot('CAPEX', dari, sampai);
+  const periodeTxt = (dari||sampai) ? ` · periode ${dari||'awal'} s.d. ${sampai||'sekarang'}` : '';
+  document.getElementById('capex-sub').textContent = `${pivot.tx.length} transaksi CAPEX${periodeTxt}`;
   const empty = document.getElementById('capex-empty');
   const content = document.getElementById('capex-content');
   if(pivot.tx.length===0){ empty.style.display='block'; content.style.display='none'; return; }
@@ -1553,10 +1624,15 @@ function renderCapexDetail(){
   renderCategoryPivotTable('capex-pivot-table', 'CAPEX', pivot);
   renderCategoryDetailList('capex-detail-tbody', pivot.tx);
 }
+wireMonthRangeFilter('capex-bulan','capex-tgl-dari','capex-tgl-sampai','btn-capex-reset-tgl', renderCapexDetail);
 
 function renderOpexDetail(){
-  const pivot = buildCategoryPivot('OPEX');
-  document.getElementById('opex-sub').textContent = `${pivot.tx.length} transaksi OPEX`;
+  populateMonthSelect('opex-bulan', 'OPEX');
+  const dari = document.getElementById('opex-tgl-dari').value;
+  const sampai = document.getElementById('opex-tgl-sampai').value;
+  const pivot = buildCategoryPivot('OPEX', dari, sampai);
+  const periodeTxt = (dari||sampai) ? ` · periode ${dari||'awal'} s.d. ${sampai||'sekarang'}` : '';
+  document.getElementById('opex-sub').textContent = `${pivot.tx.length} transaksi OPEX${periodeTxt}`;
   const empty = document.getElementById('opex-empty');
   const content = document.getElementById('opex-content');
   if(pivot.tx.length===0){ empty.style.display='block'; content.style.display='none'; return; }
@@ -1564,6 +1640,7 @@ function renderOpexDetail(){
   renderCategoryPivotTable('opex-pivot-table', 'OPEX', pivot);
   renderCategoryDetailList('opex-detail-tbody', pivot.tx);
 }
+wireMonthRangeFilter('opex-bulan','opex-tgl-dari','opex-tgl-sampai','btn-opex-reset-tgl', renderOpexDetail);
 
 function exportCategoryDetail(kategori, label){
   const tx = STATE.transactions.filter(t=>t.kategori===kategori);
@@ -1583,6 +1660,7 @@ function exportCategoryDetail(kategori, label){
 let editingPengeluaranId = null;
 
 function renderPengeluaranDetail(){
+  populateMonthSelect('pl-bulan', 'Pengeluaran');
   const dari = document.getElementById('pl-tgl-dari').value;
   const sampai = document.getElementById('pl-tgl-sampai').value;
   const pivot = buildCategoryPivot('Pengeluaran', dari, sampai);
@@ -1670,14 +1748,7 @@ async function deletePengeluaranEntry(id){
   }
 }
 
-['pl-tgl-dari','pl-tgl-sampai'].forEach(id=>{
-  document.getElementById(id).addEventListener('change', renderPengeluaranDetail);
-});
-document.getElementById('btn-pl-reset-tgl').addEventListener('click', ()=>{
-  document.getElementById('pl-tgl-dari').value = '';
-  document.getElementById('pl-tgl-sampai').value = '';
-  renderPengeluaranDetail();
-});
+wireMonthRangeFilter('pl-bulan','pl-tgl-dari','pl-tgl-sampai','btn-pl-reset-tgl', renderPengeluaranDetail);
 
 document.getElementById('btn-export-capex').addEventListener('click', ()=>exportCategoryDetail('CAPEX','CAPEX'));
 document.getElementById('btn-export-opex').addEventListener('click', ()=>exportCategoryDetail('OPEX','OPEX'));
