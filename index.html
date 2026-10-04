@@ -96,6 +96,7 @@
   .tag.OPEX{background:#FBEFE3;color:var(--amber);}
   .tag.CAPEX{background:#EAEEF7;color:#3B4E9C;}
   .tag.Pengeluaran{background:#FBEAEA;color:var(--red);}
+  .tag.NonRS{background:#F3E8FF;color:#7C3AED;}
   .harian-jenis-btn{opacity:.45;border:1px solid transparent;}
   .harian-jenis-btn.active{opacity:1;border-color:currentColor;}
   .amt-in{color:var(--green);font-weight:600;}
@@ -104,6 +105,8 @@
   .filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:center;}
   .rekap-totals{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px;}
   @media (max-width:1000px){.rekap-totals{grid-template-columns:repeat(2,1fr);}}
+  .rekap-totals.harian-kpis{grid-template-columns:repeat(3,1fr);}
+  @media (max-width:1000px){.rekap-totals.harian-kpis{grid-template-columns:repeat(2,1fr);}}
   .filters select,.filters input{width:auto;min-width:140px;}
   .filters .grow{flex:1;min-width:180px;}
 
@@ -366,9 +369,10 @@
       <div class="card">
         <div class="field">
           <label>1. Jenis transaksi</label>
-          <div style="display:flex;gap:10px;">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
             <button type="button" class="tag Pendapatan harian-jenis-btn active" data-jenis="Pendapatan" style="padding:9px 18px;font-size:13px;cursor:pointer;">💵 Pendapatan / Pemasukan</button>
-            <button type="button" class="tag Pengeluaran harian-jenis-btn" data-jenis="Pengeluaran" style="padding:9px 18px;font-size:13px;cursor:pointer;">💸 Pengeluaran</button>
+            <button type="button" class="tag Pengeluaran harian-jenis-btn" data-jenis="Pengeluaran" style="padding:9px 18px;font-size:13px;cursor:pointer;">💸 Pengeluaran (Operasional RS)</button>
+            <button type="button" class="tag NonRS harian-jenis-btn" data-jenis="NonRS" style="padding:9px 18px;font-size:13px;cursor:pointer;">🚫 Pengeluaran Lain-lain / Non-RS</button>
           </div>
         </div>
 
@@ -401,26 +405,34 @@
           <button class="btn ghost" id="btn-harian-kategori-hapus" type="button">🗑 Hapus Kategori Terpilih</button>
         </div>
         <div class="note" style="margin-top:12px;">
-          Pendapatan harian masuk sebagai <strong>Pendapatan</strong>; pengeluaran harian masuk sebagai <strong>OPEX</strong> (biaya usaha rutin) — keduanya langsung terhitung di Laporan Laba Rugi &amp; Rincian OPEX, dikelompokkan menurut kategori yang dipilih di atas.
+          Pendapatan harian masuk sebagai <strong>Pendapatan</strong>; "Pengeluaran (Operasional RS)" masuk sebagai <strong>OPEX</strong> (biaya usaha rutin RS) dan ikut terhitung di Laporan Laba Rugi &amp; Rincian OPEX; "Pengeluaran Lain-lain / Non-RS" masuk ke kategori <strong>Pengeluaran</strong> terpisah (mis. keperluan pribadi yang lewat kas RS) — tidak ikut dihitung sebagai biaya operasional RS, konsisten dengan menu Pengeluaran Lain-lain.
         </div>
       </div>
 
-      <div class="grid kpis" style="margin-top:16px;">
-        <div class="kpi">
-          <div class="kpi-label">PENDAPATAN HARI INI</div>
-          <div class="kpi-val mono" id="harian-kpi-pendapatan-hari">Rp 0</div>
-        </div>
-        <div class="kpi">
-          <div class="kpi-label">PENGELUARAN HARI INI</div>
-          <div class="kpi-val mono" id="harian-kpi-pengeluaran-hari">Rp 0</div>
-        </div>
+      <div class="rekap-totals harian-kpis" style="margin-top:16px;">
         <div class="kpi">
           <div class="kpi-label">PENDAPATAN BULAN INI</div>
           <div class="kpi-val mono" id="harian-kpi-pendapatan-bulan">Rp 0</div>
         </div>
         <div class="kpi">
-          <div class="kpi-label">PENGELUARAN BULAN INI</div>
+          <div class="kpi-label">PENGELUARAN OPERASIONAL (OPEX) BULAN INI</div>
           <div class="kpi-val mono" id="harian-kpi-pengeluaran-bulan">Rp 0</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">PENGELUARAN LAIN-LAIN / NON-RS BULAN INI</div>
+          <div class="kpi-val mono" id="harian-kpi-nonrs-bulan">Rp 0</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">PENDAPATAN HARI INI</div>
+          <div class="kpi-val mono" id="harian-kpi-pendapatan-hari">Rp 0</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">PENGELUARAN OPERASIONAL (OPEX) HARI INI</div>
+          <div class="kpi-val mono" id="harian-kpi-pengeluaran-hari">Rp 0</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">PENGELUARAN LAIN-LAIN / NON-RS HARI INI</div>
+          <div class="kpi-val mono" id="harian-kpi-nonrs-hari">Rp 0</div>
         </div>
       </div>
 
@@ -749,7 +761,7 @@
 
 <script>
 /* ============================= STATE ============================= */
-let STATE = { batches: [], transactions: [], neracaAwal: { tanggalAwal:'', items:[] }, kategoriHarian: { Pendapatan:[], Pengeluaran:[] } };
+let STATE = { batches: [], transactions: [], neracaAwal: { tanggalAwal:'', items:[] }, kategoriHarian: { Pendapatan:[], Pengeluaran:[], NonRS:[] } };
 let harianJenisAktif = 'Pendapatan';
 
 /* ============================= PERAN & AKSES (ADMIN vs UNIT) =============================
@@ -833,7 +845,7 @@ async function loadState(){
   }
   STATE.neracaAwal = (neracaRes.status==='fulfilled' && neracaRes.value) ? neracaRes.value : { tanggalAwal:'', items:[] };
   if(neracaRes.status==='rejected') console.error(neracaRes.reason);
-  STATE.kategoriHarian = (kategoriRes.status==='fulfilled' && kategoriRes.value) ? kategoriRes.value : { Pendapatan:[], Pengeluaran:[] };
+  STATE.kategoriHarian = (kategoriRes.status==='fulfilled' && kategoriRes.value) ? kategoriRes.value : { Pendapatan:[], Pengeluaran:[], NonRS:[] };
   if(kategoriRes.status==='rejected') console.error(kategoriRes.reason);
 }
 /* saveState() lama (bulk-save ke localStorage) sudah tidak dipakai — setiap perubahan
@@ -1737,7 +1749,7 @@ function startEditKasHarian(id){
   const t = harianTxCache.find(x=>String(x.id)===String(id));
   if(!t) return;
   editingKasHarianId = id;
-  const jenis = t.kategori==='Pendapatan' ? 'Pendapatan' : 'Pengeluaran';
+  const jenis = t.kategori==='Pendapatan' ? 'Pendapatan' : (t.kategori==='Pengeluaran' ? 'NonRS' : 'Pengeluaran');
   harianJenisAktif = jenis;
   document.querySelectorAll('.harian-jenis-btn').forEach(b=>b.classList.toggle('active', b.dataset.jenis===jenis));
   populateKategoriHarianSelect();
@@ -1769,6 +1781,12 @@ function batalEditKasHarian(){
 }
 document.getElementById('btn-harian-batal-edit').addEventListener('click', batalEditKasHarian);
 
+function kategoriFromJenisHarian(jenis){
+  if(jenis==='Pendapatan') return 'Pendapatan';
+  if(jenis==='NonRS') return 'Pengeluaran';
+  return 'OPEX';
+}
+
 document.getElementById('btn-harian-tambah').addEventListener('click', async ()=>{
   const btn = document.getElementById('btn-harian-tambah');
   const tanggal = document.getElementById('harian-tanggal').value;
@@ -1797,7 +1815,7 @@ document.getElementById('btn-harian-tambah').addEventListener('click', async ()=
           STATE.transactions[idx] = { ...STATE.transactions[idx],
             tanggal: res.tanggal, keterangan: res.keterangan,
             amount: res.jenis==='Pendapatan' ? res.nominal : -res.nominal,
-            kategori: res.jenis==='Pendapatan' ? 'Pendapatan' : 'OPEX',
+            kategori: kategoriFromJenisHarian(res.jenis),
             kategoriRinci: kategori,
           };
         }
@@ -1807,7 +1825,7 @@ document.getElementById('btn-harian-tambah').addEventListener('click', async ()=
           unitKasHarianCache[idx] = { ...unitKasHarianCache[idx],
             tanggal: res.tanggal, keterangan: res.keterangan,
             amount: res.jenis==='Pendapatan' ? res.nominal : -res.nominal,
-            kategori: res.jenis==='Pendapatan' ? 'Pendapatan' : 'OPEX',
+            kategori: kategoriFromJenisHarian(res.jenis),
             kategoriRinci: kategori,
           };
         }
@@ -1820,7 +1838,7 @@ document.getElementById('btn-harian-tambah').addEventListener('click', async ()=
       const newRow = {
         id: res.id, batchId: '', tanggal: res.tanggal, keterangan: res.keterangan, kodeAkun: '',
         amount: res.jenis==='Pendapatan' ? res.nominal : -res.nominal,
-        kategori: res.jenis==='Pendapatan' ? 'Pendapatan' : 'OPEX',
+        kategori: kategoriFromJenisHarian(res.jenis),
         sumberKategori: 'kas harian', kategoriRinci: kategori, unit: res.unit || '',
       };
       if(APP_ROLE!=='unit'){
@@ -1883,17 +1901,24 @@ async function renderOperasionalHarian(){
   const todayStr = new Date().toISOString().slice(0,10);
   const monthStr = todayStr.slice(0,7);
 
-  let pendapatanHari=0, pengeluaranHari=0, pendapatanBulan=0, pengeluaranBulan=0;
+  let pendapatanHari=0, pengeluaranHari=0, nonrsHari=0, pendapatanBulan=0, pengeluaranBulan=0, nonrsBulan=0;
   tx.forEach(t=>{
     const v = Math.abs(t.amount);
     const isPendapatan = t.kategori==='Pendapatan';
-    if(t.tanggal===todayStr){ if(isPendapatan) pendapatanHari+=v; else pengeluaranHari+=v; }
-    if((t.tanggal||'').slice(0,7)===monthStr){ if(isPendapatan) pendapatanBulan+=v; else pengeluaranBulan+=v; }
+    const isNonRS = t.kategori==='Pengeluaran';
+    if(t.tanggal===todayStr){
+      if(isPendapatan) pendapatanHari+=v; else if(isNonRS) nonrsHari+=v; else pengeluaranHari+=v;
+    }
+    if((t.tanggal||'').slice(0,7)===monthStr){
+      if(isPendapatan) pendapatanBulan+=v; else if(isNonRS) nonrsBulan+=v; else pengeluaranBulan+=v;
+    }
   });
   document.getElementById('harian-kpi-pendapatan-hari').textContent = fmtRp(pendapatanHari);
   document.getElementById('harian-kpi-pengeluaran-hari').textContent = fmtRp(pengeluaranHari);
+  document.getElementById('harian-kpi-nonrs-hari').textContent = fmtRp(nonrsHari);
   document.getElementById('harian-kpi-pendapatan-bulan').textContent = fmtRp(pendapatanBulan);
   document.getElementById('harian-kpi-pengeluaran-bulan').textContent = fmtRp(pengeluaranBulan);
+  document.getElementById('harian-kpi-nonrs-bulan').textContent = fmtRp(nonrsBulan);
 
   const sorted = tx.slice().sort((a,b)=> (b.tanggal||'').localeCompare(a.tanggal||'') || String(b.id).localeCompare(String(a.id)));
   harianTxCache = sorted; // dipakai startEditKasHarian() saat tombol ✏️ diklik
@@ -1904,11 +1929,12 @@ async function renderOperasionalHarian(){
   }else{
     document.getElementById('harian-empty').style.display='none';
     tbody.innerHTML = sorted.map(t=>{
-      const jenis = t.kategori==='Pendapatan' ? 'Pendapatan' : 'Pengeluaran';
+      const jenis = t.kategori==='Pendapatan' ? 'Pendapatan' : (t.kategori==='Pengeluaran' ? 'NonRS' : 'Pengeluaran');
+      const jenisLabel = jenis==='NonRS' ? 'Non-RS' : jenis;
       const ket = t.kategoriRinci ? t.keterangan.replace(new RegExp('^'+t.kategoriRinci.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'( - )?'), '') : t.keterangan;
       return `<tr>
         <td>${escapeHtml(t.tanggal)}</td>
-        <td><span class="tag ${jenis}">${jenis}</span></td>
+        <td><span class="tag ${jenis}">${jenisLabel}</span></td>
         <td>${escapeHtml(t.kategoriRinci || '-')}</td>
         <td>${escapeHtml(ket || '-')}</td>
         <td style="text-align:right;" class="mono">${fmtRp(t.amount)}</td>
@@ -2399,7 +2425,7 @@ async function startApp(){
     // Harian yang datanya sendiri sudah disaring server berdasarkan PIN (lihat renderOperasionalHarian).
     try{
       const k = await callGAS('getKategoriHarian', {});
-      STATE.kategoriHarian = k || { Pendapatan:[], Pengeluaran:[] };
+      STATE.kategoriHarian = k || { Pendapatan:[], Pengeluaran:[], NonRS:[] };
     }catch(e){ console.error(e); }
     goView('harian');
   }else{
