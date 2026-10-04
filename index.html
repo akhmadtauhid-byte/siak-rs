@@ -159,6 +159,7 @@
     </div>
     <nav id="navlist">
       <button class="navitem active" data-view="dashboard">📊&nbsp; Ringkasan</button>
+      <button class="navitem" data-view="labarugi">📑&nbsp; Laporan Laba Rugi</button>
       <button class="navitem" data-view="upload">⬆️&nbsp; Unggah Dokumen</button>
       <button class="navitem" data-view="rekap">📋&nbsp; Rekap Transaksi</button>
       <button class="navitem" data-view="opex">🧾&nbsp; Rincian OPEX</button>
@@ -231,6 +232,54 @@
           <div class="card"><div class="card-title">Top OPEX</div><canvas id="chart-top-opex" height="220"></canvas></div>
           <div class="card"><div class="card-title">Top CAPEX</div><canvas id="chart-top-capex" height="220"></canvas></div>
           <div class="card"><div class="card-title">Top Pengeluaran Lain</div><canvas id="chart-top-pengeluaran" height="220"></canvas></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- LAPORAN LABA RUGI (TERINTEGRASI) -->
+    <section class="view" id="view-labarugi">
+      <div class="topbar">
+        <div>
+          <div class="pagetitle">Laporan Laba Rugi</div>
+          <div class="pagesub" id="labarugi-sub">Rekap operasional terintegrasi — ditarik otomatis dari seluruh transaksi yang sudah diklasifikasikan (Pendapatan, OPEX, CAPEX, Pengeluaran Lain-lain)</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn secondary" id="btn-export-labarugi">⬇ Unduh Laba Rugi (Excel)</button>
+        </div>
+      </div>
+
+      <div class="note" style="margin-bottom:14px;">
+        Laporan ini satu-satunya sumber yang konsisten dengan menu Rincian OPEX, Rincian CAPEX, Pengeluaran Lain-lain, dan Neraca — semuanya dihitung dari data transaksi yang sama, jadi otomatis selalu sinkron (tidak perlu rekap ulang manual). Klik baris Total Biaya Usaha/CAPEX/Pengeluaran Lain-lain untuk buka rinciannya di menu masing-masing.
+      </div>
+
+      <div id="labarugi-empty" class="card empty" style="display:none;">
+        <h3>Belum ada data untuk disusun jadi Laba Rugi</h3>
+        <p>Unggah dokumen transaksi terlebih dahulu di menu Unggah Dokumen.</p>
+      </div>
+
+      <div id="labarugi-content" style="display:none;">
+        <div class="card">
+          <div class="tablewrap">
+            <table id="labarugi-table"></table>
+          </div>
+        </div>
+
+        <div class="grid kpis" style="grid-template-columns:repeat(3,1fr);margin-top:16px;">
+          <div class="kpi">
+            <div class="kpi-label">MARGIN LABA BERSIH (RATA-RATA PERIODE)</div>
+            <div class="kpi-val mono" id="labarugi-margin">0%</div>
+            <div class="kpi-sub">Laba (Rugi) Bersih ÷ Pendapatan, seluruh periode</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">RASIO BIAYA USAHA (OPEX) TERHADAP PENDAPATAN</div>
+            <div class="kpi-val mono" id="labarugi-opex-ratio">0%</div>
+            <div class="kpi-sub">Termasuk Biaya Penyusutan &amp; PPh 25</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">TOTAL CAPEX TERHADAP PENDAPATAN</div>
+            <div class="kpi-val mono" id="labarugi-capex-ratio">0%</div>
+            <div class="kpi-sub">Porsi investasi aset terhadap pendapatan periode berjalan</div>
+          </div>
         </div>
       </div>
     </section>
@@ -611,6 +660,7 @@ function goView(name){
   document.getElementById('view-'+name).classList.add('active');
   document.querySelectorAll('.navitem').forEach(b=>b.classList.toggle('active', b.dataset.view===name));
   if(name==='dashboard') renderDashboard();
+  if(name==='labarugi') renderLabaRugi();
   if(name==='rekap') renderRekap();
   if(name==='riwayat') renderRiwayat();
   if(name==='opex') renderOpexDetail();
@@ -1272,6 +1322,132 @@ function renderPengeluaranDetail(){
 document.getElementById('btn-export-capex').addEventListener('click', ()=>exportCategoryDetail('CAPEX','CAPEX'));
 document.getElementById('btn-export-opex').addEventListener('click', ()=>exportCategoryDetail('OPEX','OPEX'));
 document.getElementById('btn-export-pengeluaran').addEventListener('click', ()=>exportCategoryDetail('Pengeluaran','Pengeluaran_Lain-lain'));
+
+/* ============================= LAPORAN LABA RUGI (TERINTEGRASI) =============================
+   Satu laporan yang menyatukan Pendapatan, OPEX (Biaya Usaha + item "Biaya Penyusutan"/"PPh 25"
+   dipisah sebagai baris tersendiri sesuai format Laba Rugi RS), CAPEX (Investment Cost), dan
+   Pengeluaran Lain-lain - semuanya ditarik langsung dari STATE.transactions yang sama dipakai
+   Rincian OPEX/CAPEX/Pengeluaran & Neraca, supaya bagian keuangan selalu lihat angka yang
+   konsisten di semua menu tanpa rekap manual terpisah. */
+function buildLabaRugi(){
+  const tx = STATE.transactions;
+  const monthsSet = new Set();
+  tx.forEach(t=>{ if(/^\d{4}-\d{2}-\d{2}$/.test(t.tanggal)) monthsSet.add(t.tanggal.slice(0,7)); });
+  const months = Array.from(monthsSet).sort();
+
+  const emptyBucket = () => ({ pendapatan:0, biayaUsaha:0, biayaPenyusutan:0, pph25:0, capex:0, pengeluaran:0 });
+  const byMonth = {}; months.forEach(m=> byMonth[m]=emptyBucket());
+  const tanpaTanggal = emptyBucket();
+  let hasTanpaTanggal = false;
+
+  tx.forEach(t=>{
+    const m = /^\d{4}-\d{2}-\d{2}$/.test(t.tanggal) ? t.tanggal.slice(0,7) : null;
+    const bucket = m ? byMonth[m] : (hasTanpaTanggal=true, tanpaTanggal);
+    const v = Math.abs(t.amount);
+    const ket = (t.keterangan||'').trim().toLowerCase();
+    if(t.kategori==='Pendapatan') bucket.pendapatan += v;
+    else if(t.kategori==='OPEX'){
+      if(ket==='biaya penyusutan') bucket.biayaPenyusutan += v;
+      else if(ket==='pph 25') bucket.pph25 += v;
+      else bucket.biayaUsaha += v;
+    }
+    else if(t.kategori==='CAPEX') bucket.capex += v;
+    else if(t.kategori==='Pengeluaran') bucket.pengeluaran += v;
+  });
+
+  const colKeys = hasTanpaTanggal ? [...months, 'Tanpa Tanggal'] : months;
+  const data = {}; colKeys.forEach(k=> data[k] = (k==='Tanpa Tanggal') ? tanpaTanggal : byMonth[k]);
+  return { colKeys, data };
+}
+
+function computeLabaRugiRows(colKeys, data){
+  const rowVals = fn => { const vals = colKeys.map(k=>fn(data[k])); return { vals, total: vals.reduce((a,b)=>a+b,0) }; };
+  const pendapatan = rowVals(d=>d.pendapatan);
+  const biayaUsaha = rowVals(d=>d.biayaUsaha);
+  const ebitda = { vals: colKeys.map((k,i)=>pendapatan.vals[i]-biayaUsaha.vals[i]), total: pendapatan.total-biayaUsaha.total };
+  const penyusutan = rowVals(d=>d.biayaPenyusutan);
+  const ebit = { vals: colKeys.map((k,i)=>ebitda.vals[i]-penyusutan.vals[i]), total: ebitda.total-penyusutan.total };
+  const pph25 = rowVals(d=>d.pph25);
+  const grossProfit = { vals: colKeys.map((k,i)=>ebit.vals[i]-pph25.vals[i]), total: ebit.total-pph25.total };
+  const capex = rowVals(d=>d.capex);
+  const netIncome = { vals: colKeys.map((k,i)=>grossProfit.vals[i]-capex.vals[i]), total: grossProfit.total-capex.total };
+  const pengeluaran = rowVals(d=>d.pengeluaran);
+  const labaBersih = { vals: colKeys.map((k,i)=>netIncome.vals[i]-pengeluaran.vals[i]), total: netIncome.total-pengeluaran.total };
+  return { pendapatan, biayaUsaha, ebitda, penyusutan, ebit, pph25, grossProfit, capex, netIncome, pengeluaran, labaBersih };
+}
+
+function renderLabaRugi(){
+  const empty = document.getElementById('labarugi-empty');
+  const content = document.getElementById('labarugi-content');
+  if(STATE.transactions.length===0){ empty.style.display='block'; content.style.display='none'; return; }
+  empty.style.display='none'; content.style.display='block';
+
+  const { colKeys, data } = buildLabaRugi();
+  const monthLabel = m => m==='Tanpa Tanggal' ? m : new Date(m+'-01').toLocaleDateString('id-ID',{month:'short',year:'numeric'});
+  const r = computeLabaRugiRows(colKeys, data);
+
+  function tr(label, rowData, opts={}){
+    const cells = colKeys.map((k,i)=>`<td style="text-align:right;${opts.muted?'color:var(--muted);':''}">${fmtRp(rowData.vals[i])}</td>`).join('');
+    const trStyle = opts.bold ? ' style="font-weight:700;border-top:2px solid var(--border);"' : '';
+    const labelHtml = opts.link
+      ? `<span onclick="goView('${opts.link}')" style="cursor:pointer;color:var(--teal-dark);text-decoration:underline;">${label}</span>`
+      : label;
+    return `<tr${trStyle}><td>${labelHtml}</td>${cells}<td style="text-align:right;font-weight:600;">${fmtRp(rowData.total)}</td></tr>`;
+  }
+
+  let html = '<thead><tr><th>Keterangan</th>' + colKeys.map(m=>`<th style="text-align:right;">${monthLabel(m)}</th>`).join('') + '<th style="text-align:right;">Total</th></tr></thead><tbody>';
+  html += tr('Pendapatan', r.pendapatan);
+  html += tr('Total Biaya Usaha (OPEX)', r.biayaUsaha, {link:'opex'});
+  html += tr('EBITDA', r.ebitda, {bold:true});
+  html += tr('Biaya Penyusutan', r.penyusutan, {muted:true});
+  html += tr('EBIT', r.ebit, {bold:true});
+  html += tr('PPh 25', r.pph25, {muted:true});
+  html += tr('Gross Profit', r.grossProfit, {bold:true});
+  html += tr('Investment Cost (CAPEX)', r.capex, {link:'capex'});
+  html += tr('Net Income', r.netIncome, {bold:true});
+  html += tr('Pengeluaran Lain-lain', r.pengeluaran, {link:'pengeluaran'});
+  html += tr('LABA (RUGI) BERSIH', r.labaBersih, {bold:true});
+  html += '</tbody>';
+  document.getElementById('labarugi-table').innerHTML = html;
+
+  const marginEl = document.getElementById('labarugi-margin');
+  marginEl.textContent = r.pendapatan.total ? ((r.labaBersih.total/r.pendapatan.total)*100).toFixed(1)+'%' : '0%';
+  marginEl.style.color = r.labaBersih.total>=0 ? 'var(--green)' : 'var(--red)';
+  const opexAll = r.biayaUsaha.total + r.penyusutan.total + r.pph25.total;
+  document.getElementById('labarugi-opex-ratio').textContent = r.pendapatan.total ? ((opexAll/r.pendapatan.total)*100).toFixed(1)+'%' : '0%';
+  document.getElementById('labarugi-capex-ratio').textContent = r.pendapatan.total ? ((r.capex.total/r.pendapatan.total)*100).toFixed(1)+'%' : '0%';
+}
+
+function exportLabaRugi(){
+  if(STATE.transactions.length===0){ showToast('Belum ada data untuk diunduh.'); return; }
+  const { colKeys, data } = buildLabaRugi();
+  const monthLabel = m => m==='Tanpa Tanggal' ? m : new Date(m+'-01').toLocaleDateString('id-ID',{month:'long',year:'numeric'});
+  const r = computeLabaRugiRows(colKeys, data);
+  const header = ['Keterangan', ...colKeys.map(monthLabel), 'Total'];
+  const rows = [
+    ['RSU ALLAM MEDICA - LAPORAN LABA RUGI (TERINTEGRASI SIAK-RS)'],
+    ['Diunduh pada', new Date().toLocaleString('id-ID')],
+    [],
+    header,
+    ['Pendapatan', ...r.pendapatan.vals, r.pendapatan.total],
+    ['Total Biaya Usaha (OPEX)', ...r.biayaUsaha.vals, r.biayaUsaha.total],
+    ['EBITDA', ...r.ebitda.vals, r.ebitda.total],
+    ['Biaya Penyusutan', ...r.penyusutan.vals, r.penyusutan.total],
+    ['EBIT', ...r.ebit.vals, r.ebit.total],
+    ['PPh 25', ...r.pph25.vals, r.pph25.total],
+    ['Gross Profit', ...r.grossProfit.vals, r.grossProfit.total],
+    ['Investment Cost (CAPEX)', ...r.capex.vals, r.capex.total],
+    ['Net Income', ...r.netIncome.vals, r.netIncome.total],
+    ['Pengeluaran Lain-lain', ...r.pengeluaran.vals, r.pengeluaran.total],
+    ['LABA (RUGI) BERSIH', ...r.labaBersih.vals, r.labaBersih.total],
+  ];
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:28}, ...colKeys.map(()=>({wch:16})), {wch:16}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Laba Rugi');
+  XLSX.writeFile(wb, `Laporan_Laba_Rugi_SIAK-RS_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+document.getElementById('btn-export-labarugi').addEventListener('click', exportLabaRugi);
 
 /* ============================= NERACA ============================= */
 const NERACA_DEFAULTS = [
