@@ -205,10 +205,12 @@ async function callGAS(action, payload){
   return json.data;
 }
 
+let APP_PIN = '';
+
 async function loadData(){
   let stateData = { batches:[], transactions:[] }, analysisText = null;
-  try{ stateData = await callGAS('getData', {}); }catch(e){ console.error(e); }
-  try{ const a = await callGAS('getAnalysis', {}); if(a && a.text) analysisText = a.text; }catch(e){ console.error(e); }
+  try{ stateData = await callGAS('getData', { pin: APP_PIN }); }catch(e){ console.error(e); }
+  try{ const a = await callGAS('getAnalysis', { pin: APP_PIN }); if(a && a.text) analysisText = a.text; }catch(e){ console.error(e); }
   render(JSON.stringify(stateData), analysisText);
 }
 
@@ -369,8 +371,17 @@ async function trySubmitPin(){
   btn.disabled = true; errEl.textContent = '';
   try{
     const res = await callGAS('checkPin', { pin });
-    if(res.valid){ sessionStorage.setItem('siak-rs-pin-ok','1'); startApp(); }
-    else{ errEl.textContent = 'PIN salah. Coba lagi.'; }
+    if(res.valid && res.role==='admin'){
+      APP_PIN = pin;
+      sessionStorage.setItem('siak-rs-pin-ok','1');
+      sessionStorage.setItem('siak-rs-role','admin');
+      sessionStorage.setItem('siak-rs-pin', pin);
+      startApp();
+    }else if(res.valid){
+      errEl.textContent = 'PIN ini untuk Operasional Harian unit, tidak punya akses ke Mode Direksi.';
+    }else{
+      errEl.textContent = 'PIN salah. Coba lagi.';
+    }
   }catch(err){
     errEl.textContent = 'Gagal menghubungi server: ' + err.message;
   }
@@ -379,8 +390,12 @@ async function trySubmitPin(){
 document.getElementById('pin-submit').addEventListener('click', trySubmitPin);
 document.getElementById('pin-input').addEventListener('keydown', e=>{ if(e.key==='Enter') trySubmitPin(); });
 
-if(sessionStorage.getItem('siak-rs-pin-ok')==='1'){ startApp(); }
-else{ document.getElementById('pin-input').focus(); }
+if(sessionStorage.getItem('siak-rs-pin-ok')==='1' && sessionStorage.getItem('siak-rs-role')==='admin'){
+  APP_PIN = sessionStorage.getItem('siak-rs-pin') || '';
+  startApp();
+}else{
+  document.getElementById('pin-input').focus();
+}
 </script>
 </body>
 </html>
