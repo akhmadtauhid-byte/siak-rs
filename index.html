@@ -163,6 +163,7 @@
       <button class="navitem" data-view="rekap">📋&nbsp; Rekap Transaksi</button>
       <button class="navitem" data-view="opex">🧾&nbsp; Rincian OPEX</button>
       <button class="navitem" data-view="capex">🏗️&nbsp; Rincian CAPEX</button>
+      <button class="navitem" data-view="pengeluaran">💸&nbsp; Pengeluaran Lain-lain</button>
       <button class="navitem" data-view="neraca">⚖️&nbsp; Neraca</button>
       <button class="navitem" data-view="ai">🤖&nbsp; Analisis AI</button>
       <button class="navitem" data-view="riwayat">🕘&nbsp; Riwayat Unggahan</button>
@@ -411,6 +412,45 @@
       </div>
     </section>
 
+    <!-- PENGELUARAN LAIN-LAIN DETAIL -->
+    <section class="view" id="view-pengeluaran">
+      <div class="topbar">
+        <div>
+          <div class="pagetitle">Pengeluaran Lain-lain</div>
+          <div class="pagesub" id="pengeluaran-sub">0 transaksi Pengeluaran Lain-lain</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn secondary" id="btn-export-pengeluaran">⬇ Unduh Rincian (Excel)</button>
+        </div>
+      </div>
+
+      <div class="note" style="margin-bottom:14px;">
+        Kategori ini mencakup pengeluaran di luar OPEX & CAPEX operasional RS, termasuk pos-pos pribadi yang memang dipisah sejak awal oleh pembukuan RS (mis. "Pembangunan gedung baru BK" dan pos "...BK" lainnya — prive/pengeluaran pribadi, bukan aset atau biaya operasional rumah sakit).
+      </div>
+
+      <div class="card">
+        <div id="pengeluaran-empty" class="empty" style="display:none;">
+          <h3>Belum ada transaksi Pengeluaran Lain-lain</h3>
+          <p>Transaksi berkategori Pengeluaran akan muncul di sini secara otomatis setelah diunggah/diklasifikasikan.</p>
+        </div>
+        <div id="pengeluaran-content" style="display:none;">
+          <div class="card-title" style="margin-bottom:10px;">Per Item x Bulan (dengan % Porsi dari Total Pengeluaran Lain-lain)</div>
+          <div class="tablewrap">
+            <table id="pengeluaran-pivot-table"></table>
+          </div>
+          <div class="card-title" style="margin:22px 0 10px;">Rincian Transaksi</div>
+          <div class="tablewrap">
+            <table>
+              <thead>
+                <tr><th>Tanggal</th><th>Keterangan</th><th>Dokumen</th><th style="text-align:right;">Nominal</th></tr>
+              </thead>
+              <tbody id="pengeluaran-detail-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- NERACA -->
     <section class="view" id="view-neraca">
       <div class="topbar">
@@ -575,6 +615,7 @@ function goView(name){
   if(name==='riwayat') renderRiwayat();
   if(name==='opex') renderOpexDetail();
   if(name==='capex') renderCapexDetail();
+  if(name==='pengeluaran') renderPengeluaranDetail();
   if(name==='neraca') renderNeraca();
 }
 document.getElementById('navlist').addEventListener('click', e=>{
@@ -1217,8 +1258,20 @@ function exportCategoryDetail(kategori, label){
   XLSX.utils.book_append_sheet(wb, ws, `Rincian ${label}`);
   XLSX.writeFile(wb, `Rincian_${label}_SIAK-RS_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
+function renderPengeluaranDetail(){
+  const pivot = buildCategoryPivot('Pengeluaran');
+  document.getElementById('pengeluaran-sub').textContent = `${pivot.tx.length} transaksi Pengeluaran Lain-lain`;
+  const empty = document.getElementById('pengeluaran-empty');
+  const content = document.getElementById('pengeluaran-content');
+  if(pivot.tx.length===0){ empty.style.display='block'; content.style.display='none'; return; }
+  empty.style.display='none'; content.style.display='block';
+  renderCategoryPivotTable('pengeluaran-pivot-table', 'PENGELUARAN LAIN-LAIN', pivot);
+  renderCategoryDetailList('pengeluaran-detail-tbody', pivot.tx);
+}
+
 document.getElementById('btn-export-capex').addEventListener('click', ()=>exportCategoryDetail('CAPEX','CAPEX'));
 document.getElementById('btn-export-opex').addEventListener('click', ()=>exportCategoryDetail('OPEX','OPEX'));
+document.getElementById('btn-export-pengeluaran').addEventListener('click', ()=>exportCategoryDetail('Pengeluaran','Pengeluaran_Lain-lain'));
 
 /* ============================= NERACA ============================= */
 const NERACA_DEFAULTS = [
