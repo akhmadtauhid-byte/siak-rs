@@ -800,25 +800,41 @@ async function callGAS(action, payload){
   return json.data;
 }
 
-/* ============================= PERSISTENCE (Google Sheets via Apps Script) ============================= */
+/* ============================= TURBO MODE =============================
+   Apps Script Web App itu sendiri yang paling lambat (tiap panggilan = 1 permintaan jaringan
+   penuh ke Google) — bagian ini memangkas JUMLAH panggilan, bukan menunggu lebih cepat:
+   1) loadState() memanggil getData/getAnalysis/getNeracaAwal/getKategoriHarian SEKALIGUS
+      (Promise.allSettled) bukan satu-satu berurutan — waktu tunggu jadi selama panggilan paling
+      lambat saja, bukan jumlah keempatnya.
+   2) Setelah tambah/ubah/hapus transaksi (Operasional Harian, impor dokumen, hapus dokumen),
+      STATE diperbarui langsung di memori dari hasil aksi itu sendiri, TANPA memanggil ulang
+      loadState() — karena kita sudah tahu persis apa yang berubah, menarik ulang SEMUA data cuma
+      untuk satu baris itu mubazir dan yang membuat pindah menu terasa delay.
+   3) Navigasi antar-menu (goView) murni membaca STATE yang sudah ada di memori browser — tidak
+      ada panggilan jaringan sama sekali, makanya instan begitu data awal termuat. */
 async function loadState(){
-  try{
-    const data = await callGAS('getData', { pin: APP_PIN });
-    STATE.batches = data.batches || [];
-    STATE.transactions = data.transactions || [];
-  }catch(e){ console.error(e); showToast('Gagal memuat data dari server: '+e.message); }
-  try{
-    const a = await callGAS('getAnalysis', { pin: APP_PIN });
-    if(a && a.text) renderAnalysis(a.text);
-  }catch(e){ console.error(e); }
-  try{
-    const n = await callGAS('getNeracaAwal', { pin: APP_PIN });
-    STATE.neracaAwal = n || { tanggalAwal:'', items:[] };
-  }catch(e){ console.error(e); }
-  try{
-    const k = await callGAS('getKategoriHarian', {});
-    STATE.kategoriHarian = k || { Pendapatan:[], Pengeluaran:[] };
-  }catch(e){ console.error(e); }
+  const [dataRes, analysisRes, neracaRes, kategoriRes] = await Promise.allSettled([
+    callGAS('getData', { pin: APP_PIN }),
+    callGAS('getAnalysis', { pin: APP_PIN }),
+    callGAS('getNeracaAwal', { pin: APP_PIN }),
+    callGAS('getKategoriHarian', {}),
+  ]);
+  if(dataRes.status==='fulfilled'){
+    STATE.batches = dataRes.value.batches || [];
+    STATE.transactions = dataRes.value.transactions || [];
+  }else{
+    console.error(dataRes.reason);
+    showToast('Gagal memuat data dari server: '+dataRes.reason.message);
+  }
+  if(analysisRes.status==='fulfilled' && analysisRes.value && analysisRes.value.text){
+    renderAnalysis(analysisRes.value.text);
+  }else if(analysisRes.status==='rejected'){
+    console.error(analysisRes.reason);
+  }
+  STATE.neracaAwal = (neracaRes.status==='fulfilled' && neracaRes.value) ? neracaRes.value : { tanggalAwal:'', items:[] };
+  if(neracaRes.status==='rejected') console.error(neracaRes.reason);
+  STATE.kategoriHarian = (kategoriRes.status==='fulfilled' && kategoriRes.value) ? kategoriRes.value : { Pendapatan:[], Pengeluaran:[] };
+  if(kategoriRes.status==='rejected') console.error(kategoriRes.reason);
 }
 /* saveState() lama (bulk-save ke localStorage) sudah tidak dipakai — setiap perubahan
    (impor, ubah kategori, hapus batch) langsung memanggil endpoint GAS masing-masing,
@@ -1087,7 +1103,10 @@ document.getElementById('btn-import').addEventListener('click', async ()=>{
   log.innerHTML = `<span class="spinner"></span> Menyimpan ${newTx.length} transaksi ke Google Sheets...`;
   try{
     await callGAS('importBatch', { pin: APP_PIN, batch, transactions: newTx });
-    await loadState();
+    // TURBO: data yang baru diimpor sudah ada di memori (newTx/batch) — tambal STATE langsung
+    // daripada menarik ulang seluruh data dari server lewat loadState().
+    STATE.batches.push(batch);
+    STATE.transactions = STATE.transactions.concat(newTx);
     log.textContent = `Berhasil mengimpor ${newTx.length} transaksi dari "${batchName}".`;
     showToast(`${newTx.length} transaksi berhasil diimpor`);
     document.getElementById('upload-steps').style.display='none';
@@ -1400,7 +1419,9 @@ async function deleteBatch(id){
   if(!confirm('Hapus dokumen ini beserta seluruh transaksinya? Tindakan ini tidak dapat dibatalkan.')) return;
   try{
     await callGAS('deleteBatch', { pin: APP_PIN, batchId: id });
-    await loadState();
+    // TURBO: filter langsung di memori daripada loadState() ulang.
+    STATE.batches = STATE.batches.filter(b=>b.id!==id);
+    STATE.transactions = STATE.transactions.filter(t=>t.batchId!==id);
     renderRiwayat();
     renderDashboard();
     showToast('Dokumen dihapus');
@@ -1660,6 +1681,9 @@ document.getElementById('btn-export-labarugi').addEventListener('click', exportL
    yang bisa ditambah sendiri — sehingga otomatis ikut terhitung di Rincian OPEX & Laporan Laba
    Rugi tanpa rekap manual terpisah. */
 let editingKasHarianId = null; // null = mode tambah baru; terisi = sedang mengedit entri ini
+let unitKasHarianCache = null; // TURBO (PIN unit): null = belum pernah diambil dari server;
+                                // begitu terisi, add/update/delete menambal array ini langsung
+                                // di memori supaya tidak perlu getKasHarianUnit lagi tiap render.
 let harianTxCache = []; // entri yang sedang ditampilkan di tabel, dipakai saat tombol Edit diklik
 
 function populateKategoriHarianSelect(){
@@ -1761,16 +1785,50 @@ document.getElementById('btn-harian-tambah').addEventListener('click', async ()=
     // PIN unit -> aksi "...Unit" (server menentukan unit dari PIN); Super Admin -> aksi biasa
     // (tanpa unit, "Pusat"). Ini mencegah PIN unit menulis/mengubah entri tanpa label unit
     // lewat endpoint admin, dan mencegah PIN unit mengedit entri milik unit lain.
+    // TURBO: untuk admin, hasil aksi dipakai untuk menambal STATE.transactions langsung di
+    // memori (bukan memanggil ulang loadState() yang menarik SEMUA data dari server lagi) —
+    // jadi menu-menu lain (Dashboard, Laba Rugi, dst.) tetap langsung sinkron tanpa delay.
     if(editingKasHarianId){
       const action = APP_ROLE==='unit' ? 'updateKasHarianUnit' : 'updateKasHarian';
-      await callGAS(action, { pin: APP_PIN, id: editingKasHarianId, jenis: harianJenisAktif, tanggal, kategori, nominal, keterangan });
-      if(APP_ROLE!=='unit') await loadState();
+      const res = await callGAS(action, { pin: APP_PIN, id: editingKasHarianId, jenis: harianJenisAktif, tanggal, kategori, nominal, keterangan });
+      if(APP_ROLE!=='unit'){
+        const idx = STATE.transactions.findIndex(t=>String(t.id)===String(editingKasHarianId));
+        if(idx>=0){
+          STATE.transactions[idx] = { ...STATE.transactions[idx],
+            tanggal: res.tanggal, keterangan: res.keterangan,
+            amount: res.jenis==='Pendapatan' ? res.nominal : -res.nominal,
+            kategori: res.jenis==='Pendapatan' ? 'Pendapatan' : 'OPEX',
+            kategoriRinci: kategori,
+          };
+        }
+      }else if(unitKasHarianCache){
+        const idx = unitKasHarianCache.findIndex(t=>String(t.id)===String(editingKasHarianId));
+        if(idx>=0){
+          unitKasHarianCache[idx] = { ...unitKasHarianCache[idx],
+            tanggal: res.tanggal, keterangan: res.keterangan,
+            amount: res.jenis==='Pendapatan' ? res.nominal : -res.nominal,
+            kategori: res.jenis==='Pendapatan' ? 'Pendapatan' : 'OPEX',
+            kategoriRinci: kategori,
+          };
+        }
+      }
       showToast(`Transaksi "${kategori}" sebesar ${fmtRp(nominal)} diperbarui.`);
       batalEditKasHarian();
     }else{
       const action = APP_ROLE==='unit' ? 'addKasHarianUnit' : 'addKasHarian';
-      await callGAS(action, { pin: APP_PIN, jenis: harianJenisAktif, tanggal, kategori, nominal, keterangan });
-      if(APP_ROLE!=='unit') await loadState();
+      const res = await callGAS(action, { pin: APP_PIN, jenis: harianJenisAktif, tanggal, kategori, nominal, keterangan });
+      const newRow = {
+        id: res.id, batchId: '', tanggal: res.tanggal, keterangan: res.keterangan, kodeAkun: '',
+        amount: res.jenis==='Pendapatan' ? res.nominal : -res.nominal,
+        kategori: res.jenis==='Pendapatan' ? 'Pendapatan' : 'OPEX',
+        sumberKategori: 'kas harian', kategoriRinci: kategori, unit: res.unit || '',
+      };
+      if(APP_ROLE!=='unit'){
+        STATE.transactions.push(newRow);
+      }else{
+        if(unitKasHarianCache===null) unitKasHarianCache = [];
+        unitKasHarianCache.push(newRow);
+      }
       document.getElementById('harian-nominal').value = '';
       document.getElementById('harian-keterangan').value = '';
       showToast(`${harianJenisAktif} "${kategori}" sebesar ${fmtRp(nominal)} tersimpan.`);
@@ -1787,9 +1845,10 @@ async function deleteKasHarianEntry(id){
   try{
     if(APP_ROLE==='unit'){
       await callGAS('deleteKasHarianUnit', { pin: APP_PIN, id });
+      if(unitKasHarianCache) unitKasHarianCache = unitKasHarianCache.filter(t=>String(t.id)!==String(id));
     }else{
       await callGAS('deleteKasHarian', { pin: APP_PIN, id });
-      await loadState();
+      STATE.transactions = STATE.transactions.filter(t=>String(t.id)!==String(id)); // TURBO: tanpa loadState()
     }
     if(String(editingKasHarianId)===String(id)) batalEditKasHarian();
     showToast('Transaksi dihapus.');
@@ -1807,13 +1866,16 @@ async function renderOperasionalHarian(){
   // tidak pernah memuat STATE.transactions penuh (yang berisi seluruh data keuangan RS).
   let tx;
   if(APP_ROLE==='unit'){
-    try{
-      const resp = await callGAS('getKasHarianUnit', { pin: APP_PIN });
-      tx = (resp && resp.transactions) || [];
-    }catch(err){
-      showToast('Gagal memuat data: ' + err.message);
-      tx = [];
+    if(unitKasHarianCache===null){ // hanya diambil dari server sekali; setelahnya ditambal lokal
+      try{
+        const resp = await callGAS('getKasHarianUnit', { pin: APP_PIN });
+        unitKasHarianCache = (resp && resp.transactions) || [];
+      }catch(err){
+        showToast('Gagal memuat data: ' + err.message);
+        unitKasHarianCache = [];
+      }
     }
+    tx = unitKasHarianCache;
   }else{
     tx = (STATE.transactions||[]).filter(t=>t.sumberKategori==='kas harian');
   }
