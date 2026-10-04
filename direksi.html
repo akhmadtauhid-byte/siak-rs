@@ -154,6 +154,11 @@
       </div>
     </div>
 
+    <div class="section-title">Laporan Laba Rugi</div>
+    <div class="card" style="overflow-x:auto;">
+      <table id="labarugi-table" class="mono" style="width:100%;border-collapse:collapse;font-size:12.5px;"></table>
+    </div>
+
     <div class="section-title">Analisis &amp; Rekomendasi</div>
     <div class="card narrative" id="narrative-box">
       <p style="color:var(--muted);">Analisis AI belum tersedia. Buka Mode Operasional dan klik "Buat Analisis Baru" pada menu Analisis AI.</p>
@@ -282,9 +287,73 @@ function render(stateRaw, analysis){
     });
   }
 
+  renderLabaRugiTable(tx);
+
   if(analysis){
     document.getElementById('narrative-box').innerHTML = simpleMarkdown(analysis);
   }
+}
+
+/* Laporan Laba Rugi — mengikuti struktur yang sama dengan Mode Operasional (index.html),
+   dihitung dari transaksi yang sama supaya kedua mode selalu menampilkan angka yang konsisten. */
+function renderLabaRugiTable(tx){
+  const monthsSet = new Set();
+  tx.forEach(t=>{ if(/^\d{4}-\d{2}-\d{2}$/.test(t.tanggal)) monthsSet.add(t.tanggal.slice(0,7)); });
+  const colKeys = Array.from(monthsSet).sort();
+  if(colKeys.length===0){
+    document.getElementById('labarugi-table').innerHTML = '<tr><td style="padding:10px;color:var(--muted);">Data tanggal tidak tersedia.</td></tr>';
+    return;
+  }
+  const emptyBucket = () => ({ pendapatan:0, biayaUsaha:0, biayaPenyusutan:0, pph25:0, capex:0, pengeluaran:0 });
+  const data = {}; colKeys.forEach(m=> data[m]=emptyBucket());
+  tx.forEach(t=>{
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(t.tanggal)) return;
+    const bucket = data[t.tanggal.slice(0,7)];
+    const v = Math.abs(t.amount);
+    const ket = (t.keterangan||'').trim().toLowerCase();
+    if(t.kategori==='Pendapatan') bucket.pendapatan += v;
+    else if(t.kategori==='OPEX'){
+      if(ket==='biaya penyusutan') bucket.biayaPenyusutan += v;
+      else if(ket==='pph 25') bucket.pph25 += v;
+      else bucket.biayaUsaha += v;
+    }
+    else if(t.kategori==='CAPEX') bucket.capex += v;
+    else if(t.kategori==='Pengeluaran') bucket.pengeluaran += v;
+  });
+
+  const rowVals = fn => { const vals = colKeys.map(k=>fn(data[k])); return { vals, total: vals.reduce((a,b)=>a+b,0) }; };
+  const pendapatan = rowVals(d=>d.pendapatan);
+  const biayaUsaha = rowVals(d=>d.biayaUsaha);
+  const ebitda = { vals: colKeys.map((k,i)=>pendapatan.vals[i]-biayaUsaha.vals[i]), total: pendapatan.total-biayaUsaha.total };
+  const penyusutan = rowVals(d=>d.biayaPenyusutan);
+  const ebit = { vals: colKeys.map((k,i)=>ebitda.vals[i]-penyusutan.vals[i]), total: ebitda.total-penyusutan.total };
+  const pph25 = rowVals(d=>d.pph25);
+  const grossProfit = { vals: colKeys.map((k,i)=>ebit.vals[i]-pph25.vals[i]), total: ebit.total-pph25.total };
+  const capex = rowVals(d=>d.capex);
+  const netIncome = { vals: colKeys.map((k,i)=>grossProfit.vals[i]-capex.vals[i]), total: grossProfit.total-capex.total };
+  const pengeluaran = rowVals(d=>d.pengeluaran);
+  const labaBersih = { vals: colKeys.map((k,i)=>netIncome.vals[i]-pengeluaran.vals[i]), total: netIncome.total-pengeluaran.total };
+
+  const monthLabel = m => new Date(m+'-01').toLocaleDateString('id-ID',{month:'short',year:'2-digit'});
+  function tr(label, rowData, opts={}){
+    const cells = colKeys.map((k,i)=>`<td style="padding:7px 10px;text-align:right;border-bottom:1px solid var(--border);${opts.muted?'color:var(--muted);':''}">${fmtRp(rowData.vals[i])}</td>`).join('');
+    const rowStyle = opts.bold ? 'font-weight:700;border-top:2px solid var(--border);' : '';
+    return `<tr style="${rowStyle}"><td style="padding:7px 10px;border-bottom:1px solid var(--border);">${label}</td>${cells}<td style="padding:7px 10px;text-align:right;font-weight:600;border-bottom:1px solid var(--border);">${fmtRp(rowData.total)}</td></tr>`;
+  }
+  let html = `<thead><tr><th style="text-align:left;padding:7px 10px;border-bottom:2px solid var(--border);">Keterangan</th>${colKeys.map(m=>`<th style="text-align:right;padding:7px 10px;border-bottom:2px solid var(--border);">${monthLabel(m)}</th>`).join('')}<th style="text-align:right;padding:7px 10px;border-bottom:2px solid var(--border);">Total</th></tr></thead><tbody>`;
+  html += tr('Pendapatan', pendapatan);
+  html += tr('Total Biaya Usaha (OPEX)', biayaUsaha);
+  html += tr('EBITDA', ebitda, {bold:true});
+  html += tr('Biaya Penyusutan', penyusutan, {muted:true});
+  html += tr('EBIT', ebit, {bold:true});
+  html += tr('PPh 25', pph25, {muted:true});
+  html += tr('Gross Profit', grossProfit, {bold:true});
+  html += tr('Investment Cost (CAPEX)', capex);
+  html += tr('Net Income', netIncome, {bold:true});
+  html += tr('Pengeluaran Lain-lain', pengeluaran);
+  html += tr('LABA (RUGI) BERSIH', labaBersih, {bold:true});
+  html += '</tbody>';
+  document.getElementById('labarugi-table').innerHTML = html;
 }
 
 async function startApp(){
