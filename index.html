@@ -275,6 +275,7 @@
               <div id="map-split-in-wrap" style="display:none;"><label style="font-weight:400;font-size:11.5px;">Nominal Masuk</label><select id="map-masuk"></select></div>
               <div id="map-split-out-wrap" style="display:none;"><label style="font-weight:400;font-size:11.5px;">Nominal Keluar</label><select id="map-keluar"></select></div>
               <div><label style="font-weight:400;font-size:11.5px;">Kode Akun (opsional)</label><select id="map-kode"></select></div>
+              <div><label style="font-weight:400;font-size:11.5px;">Kelompok (opsional — dipakai langsung jika sudah berisi Pendapatan/Biaya Usaha/Investment Cost/Pengeluaran Lain-Lain)</label><select id="map-kelompok"></select></div>
             </div>
           </div>
 
@@ -583,14 +584,41 @@ document.getElementById('navlist').addEventListener('click', e=>{
 
 /* ============================= RULE-BASED CLASSIFIER ============================= */
 const KW = {
+  // Dicek PALING AWAL (lihat classifyByKeyword) karena kata kunci di sini relatif spesifik
+  // untuk transaksi uang MASUK — mencegah item pendapatan (klaim BPJS ambulance, penjualan
+  // alkes, dst.) ikut kena kata kunci CAPEX di bawah hanya karena menyebut kata yang sama.
   Pendapatan: ['pendapatan','jasa layanan','klaim bpjs','bpjs','retribusi','penjualan','jasa medis','rawat jalan','rawat inap','karcis','tarif','asuransi masuk','jasa dokter (in)','penerimaan pasien'],
-  CAPEX: ['pembelian aset','aset tetap','investasi','konstruksi','pembangunan','gedung','kendaraan','ambulance','ambulan','ct scan','usg','mesin','peralatan medis','alat kesehatan','alkes','renovasi besar','instalasi gas medis','inventaris kantor besar'],
+  // Sengaja TIDAK memuat kata umum seperti "ambulance"/"ambulan"/"alkes" sendirian — kata-kata
+  // itu lebih sering muncul di klaim BPJS/pendapatan jasa ambulance & alkes daripada di
+  // pembelian aset baru, dan pembelian aset sungguhan biasanya tertangkap lewat Kode Akun atau
+  // kolom Kelompok. Kalau perlu menangkap pembelian ambulance/alkes dari kata kunci, pakai
+  // frasa yang lebih spesifik (mis. "pembelian ambulance", "pengadaan alat kesehatan").
+  CAPEX: ['pembelian aset','aset tetap','investasi','konstruksi','pembangunan gedung','proyek gedung','gedung baru','kendaraan baru','pembelian ambulance','ct scan','usg','pengadaan mesin','peralatan medis baru','pengadaan alat kesehatan','alat kesehatan baru','renovasi besar','instalasi gas medis','inventaris kantor besar'],
   OPEX: ['gaji','honor','lembur','tunjangan','listrik','air pdam','internet','telepon','obat','farmasi','bhp','atk','konsumsi','pemeliharaan','sewa','bbm','operasional','remunerasi','iuran','pajak','asuransi bpjs ketenagakerjaan','logistik','cleaning service','keamanan','satpam','diklat','pelatihan']
 };
+// Pemetaan nilai kolom "Kelompok" dari file sumber (mis. hasil export Laba Rugi) ke 4 kategori
+// internal SIAK-RS. Dicek SEBELUM kata kunci/kode akun bila kolom Kelompok dipetakan & terisi,
+// karena ini klasifikasi eksplisit dari sumbernya sendiri — jauh lebih bisa dipercaya daripada
+// tebakan kata kunci.
+const KELOMPOK_MAP = {
+  'pendapatan': 'Pendapatan',
+  'biaya usaha': 'OPEX',
+  'opex': 'OPEX',
+  'investment cost': 'CAPEX',
+  'capex': 'CAPEX',
+  'pengeluaran lain-lain': 'Pengeluaran',
+  'pengeluaran lain lain': 'Pengeluaran',
+  'pengeluaran': 'Pengeluaran',
+};
+function classifyByKelompok(kelompok){
+  if(kelompok==null || String(kelompok).trim()==='') return null;
+  const k = String(kelompok).trim().toLowerCase();
+  return KELOMPOK_MAP[k] || null;
+}
 function classifyByKeyword(desc){
   const d = (desc||'').toLowerCase();
-  for(const k of KW.CAPEX) if(d.includes(k)) return 'CAPEX';
   for(const k of KW.Pendapatan) if(d.includes(k)) return 'Pendapatan';
+  for(const k of KW.CAPEX) if(d.includes(k)) return 'CAPEX';
   for(const k of KW.OPEX) if(d.includes(k)) return 'OPEX';
   return null;
 }
@@ -605,8 +633,9 @@ function classifyByKodeAkun(kode){
   return null;
 }
 function classifyTransaction(tx){
-  let cat = classifyByKodeAkun(tx.kodeAkun);
-  let src = 'kode akun';
+  let cat = classifyByKelompok(tx.kelompokSumber);
+  let src = 'kelompok sumber';
+  if(!cat){ cat = classifyByKodeAkun(tx.kodeAkun); src = 'kode akun'; }
   if(!cat){ cat = classifyByKeyword(tx.keterangan); src = 'kata kunci'; }
   if(!cat){
     cat = (tx.amount >= 0) ? 'Pendapatan' : 'Pengeluaran';
@@ -703,6 +732,7 @@ function loadSheetPreview(){
   fillSelect(document.getElementById('map-masuk'), find(['masuk','kredit','penerimaan','pendapatan']));
   fillSelect(document.getElementById('map-keluar'), find(['keluar','debit','pengeluaran','pembayaran']));
   fillSelect(document.getElementById('map-kode'), find(['kode akun','no akun','akun']));
+  fillSelect(document.getElementById('map-kelompok'), find(['kelompok']));
   updateAmountModeUI();
 }
 
@@ -723,6 +753,7 @@ document.getElementById('btn-import').addEventListener('click', async ()=>{
   const iMasuk = document.getElementById('map-masuk').value;
   const iKeluar = document.getElementById('map-keluar').value;
   const iKode = document.getElementById('map-kode').value;
+  const iKelompok = document.getElementById('map-kelompok').value;
   const batchName = document.getElementById('batch-name').value.trim() || pendingImport.fileName;
 
   if(iKet===''){ showToast('Kolom Keterangan wajib dipilih agar transaksi bisa dikenali.'); return; }
@@ -772,6 +803,7 @@ document.getElementById('btn-import').addEventListener('click', async ()=>{
       tanggal: iTgl!=='' ? toDateStr(row[iTgl]) : '',
       keterangan: String(ket).trim(),
       kodeAkun: iKode!=='' ? String(row[iKode]||'').trim() : '',
+      kelompokSumber: iKelompok!=='' ? String(row[iKelompok]||'').trim() : '',
       amount: amount,
     };
     const c = classifyTransaction(tx);
