@@ -96,6 +96,8 @@
   .tag.OPEX{background:#FBEFE3;color:var(--amber);}
   .tag.CAPEX{background:#EAEEF7;color:#3B4E9C;}
   .tag.Pengeluaran{background:#FBEAEA;color:var(--red);}
+  .harian-jenis-btn{opacity:.45;border:1px solid transparent;}
+  .harian-jenis-btn.active{opacity:1;border-color:currentColor;}
   .amt-in{color:var(--green);font-weight:600;}
   .amt-out{color:var(--red);font-weight:600;}
 
@@ -161,6 +163,7 @@
       <button class="navitem active" data-view="dashboard">📊&nbsp; Ringkasan</button>
       <button class="navitem" data-view="labarugi">📑&nbsp; Laporan Laba Rugi</button>
       <button class="navitem" data-view="upload">⬆️&nbsp; Unggah Dokumen</button>
+      <button class="navitem" data-view="harian">💰&nbsp; Operasional Harian</button>
       <button class="navitem" data-view="rekap">📋&nbsp; Rekap Transaksi</button>
       <button class="navitem" data-view="opex">🧾&nbsp; Rincian OPEX</button>
       <button class="navitem" data-view="capex">🏗️&nbsp; Rincian CAPEX</button>
@@ -168,11 +171,13 @@
       <button class="navitem" data-view="neraca">⚖️&nbsp; Neraca</button>
       <button class="navitem" data-view="ai">🤖&nbsp; Analisis AI</button>
       <button class="navitem" data-view="riwayat">🕘&nbsp; Riwayat Unggahan</button>
-      <a class="navitem" href="direksi.html" style="text-decoration:none;display:flex;">👔&nbsp; Mode Direksi</a>
+      <button class="navitem admin-only" data-view="aksesunit">🔑&nbsp; Manajemen Akses</button>
+      <a class="navitem admin-only" href="direksi.html" style="text-decoration:none;display:flex;">👔&nbsp; Mode Direksi</a>
     </nav>
     <div class="side-foot">
-      RSU Allam Medica<br>
+      <span id="side-foot-role">RSU Allam Medica</span><br>
       Data tersimpan di Google Sheets — bisa diakses dari perangkat mana pun dengan PIN akses.
+      <div style="margin-top:8px;"><a href="#" id="btn-logout" style="color:var(--mint);text-decoration:none;font-weight:600;">⎋ Keluar / ganti PIN</a></div>
     </div>
     <div style="margin-top:10px;font-size:10px;color:#5C7488;">v2.0 · siak-rs · Google Sheets</div>
   </aside>
@@ -344,6 +349,121 @@
 
       <div class="note">
         Sistem otomatis mengklasifikasikan tiap transaksi ke <strong>Pendapatan</strong>, <strong>OPEX</strong>, <strong>CAPEX</strong>, atau <strong>Pengeluaran</strong> berdasarkan kode akun &amp; kata kunci. Transaksi yang tidak dikenali dapat diperkuat dengan AI di menu Rekap Transaksi, dan tetap dapat diubah manual.
+      </div>
+    </section>
+
+    <!-- OPERASIONAL HARIAN (KAS HARIAN) -->
+    <section class="view" id="view-harian">
+      <div class="topbar">
+        <div>
+          <div class="pagetitle">Operasional Harian</div>
+          <div class="pagesub">Catat pendapatan &amp; pengeluaran operasional sehari-hari langsung — tanpa menunggu unggah file bulanan — tiap entri otomatis ikut ke Rincian OPEX &amp; Laporan Laba Rugi</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="field">
+          <label>1. Jenis transaksi</label>
+          <div style="display:flex;gap:10px;">
+            <button type="button" class="tag Pendapatan harian-jenis-btn active" data-jenis="Pendapatan" style="padding:9px 18px;font-size:13px;cursor:pointer;">💵 Pendapatan / Pemasukan</button>
+            <button type="button" class="tag Pengeluaran harian-jenis-btn" data-jenis="Pengeluaran" style="padding:9px 18px;font-size:13px;cursor:pointer;">💸 Pengeluaran</button>
+          </div>
+        </div>
+
+        <div class="mapgrid" style="margin-top:14px;">
+          <div>
+            <label style="font-weight:400;font-size:11.5px;">Tanggal</label>
+            <input type="date" class="textinput" id="harian-tanggal">
+          </div>
+          <div>
+            <label style="font-weight:400;font-size:11.5px;">Kategori</label>
+            <select id="harian-kategori"></select>
+          </div>
+          <div>
+            <label style="font-weight:400;font-size:11.5px;">Nominal (Rp)</label>
+            <input type="number" min="0" class="textinput" id="harian-nominal" placeholder="0">
+          </div>
+          <div>
+            <label style="font-weight:400;font-size:11.5px;">Keterangan (opsional)</label>
+            <input type="text" class="textinput" id="harian-keterangan" placeholder="cth. Pembelian galon air minum">
+          </div>
+        </div>
+
+        <div style="display:flex;gap:10px;margin-top:14px;align-items:center;">
+          <button class="btn" id="btn-harian-tambah">+ Simpan Transaksi</button>
+          <button class="btn ghost" id="btn-harian-kategori-baru" type="button">+ Kategori Baru</button>
+        </div>
+        <div class="note" style="margin-top:12px;">
+          Pendapatan harian masuk sebagai <strong>Pendapatan</strong>; pengeluaran harian masuk sebagai <strong>OPEX</strong> (biaya usaha rutin) — keduanya langsung terhitung di Laporan Laba Rugi &amp; Rincian OPEX, dikelompokkan menurut kategori yang dipilih di atas.
+        </div>
+      </div>
+
+      <div class="grid kpis" style="margin-top:16px;">
+        <div class="kpi">
+          <div class="kpi-label">PENDAPATAN HARI INI</div>
+          <div class="kpi-val mono" id="harian-kpi-pendapatan-hari">Rp 0</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">PENGELUARAN HARI INI</div>
+          <div class="kpi-val mono" id="harian-kpi-pengeluaran-hari">Rp 0</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">PENDAPATAN BULAN INI</div>
+          <div class="kpi-val mono" id="harian-kpi-pendapatan-bulan">Rp 0</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">PENGELUARAN BULAN INI</div>
+          <div class="kpi-val mono" id="harian-kpi-pengeluaran-bulan">Rp 0</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px;">Riwayat Operasional Harian (terbaru dahulu)</div>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>Tanggal</th><th>Jenis</th><th>Kategori</th><th>Keterangan</th><th style="text-align:right;">Nominal</th><th></th></tr></thead>
+            <tbody id="harian-list-tbody"></tbody>
+          </table>
+        </div>
+        <div id="harian-empty" class="empty" style="display:none;padding:30px;">Belum ada transaksi operasional harian yang dicatat.</div>
+      </div>
+    </section>
+
+    <!-- MANAJEMEN AKSES UNIT (SUPER ADMIN) -->
+    <section class="view" id="view-aksesunit">
+      <div class="topbar">
+        <div>
+          <div class="pagetitle">Manajemen Akses Unit</div>
+          <div class="pagesub">Khusus Super Admin — buat PIN untuk tiap unit/bagian agar petugasnya hanya bisa input &amp; lihat Operasional Harian unitnya sendiri</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="mapgrid">
+          <div>
+            <label style="font-weight:400;font-size:11.5px;">Nama Unit/Bagian</label>
+            <input type="text" class="textinput" id="akses-nama-unit" placeholder="cth. Apotek / Farmasi">
+          </div>
+          <div>
+            <label style="font-weight:400;font-size:11.5px;">PIN Unit (min. 4 digit)</label>
+            <input type="password" inputmode="numeric" class="textinput" id="akses-pin-unit" placeholder="cth. 4521">
+          </div>
+        </div>
+        <button class="btn" id="btn-akses-tambah" style="margin-top:12px;">+ Buat Unit &amp; PIN</button>
+        <div class="note" style="margin-top:12px;">
+          PIN ini memberi akses TERBATAS — hanya menu Operasional Harian milik unit tersebut (tidak bisa melihat Dashboard, Rekap, OPEX/CAPEX, Laba Rugi, Neraca, atau unit lain). PIN Super Admin (PIN login utama) tetap satu-satunya yang punya akses penuh ke semua menu, termasuk menu ini.
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px;">Daftar Unit &amp; PIN</div>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>Unit/Bagian</th><th>PIN</th><th>Status</th><th></th></tr></thead>
+            <tbody id="akses-list-tbody"></tbody>
+          </table>
+        </div>
+        <div id="akses-empty" class="empty" style="display:none;padding:30px;">Belum ada unit yang dibuat. Tambahkan unit pertama di atas.</div>
       </div>
     </section>
 
@@ -592,7 +712,17 @@
 
 <script>
 /* ============================= STATE ============================= */
-let STATE = { batches: [], transactions: [], neracaAwal: { tanggalAwal:'', items:[] } };
+let STATE = { batches: [], transactions: [], neracaAwal: { tanggalAwal:'', items:[] }, kategoriHarian: { Pendapatan:[], Pengeluaran:[] } };
+let harianJenisAktif = 'Pendapatan';
+
+/* ============================= PERAN & AKSES (ADMIN vs UNIT) =============================
+   APP_ROLE: 'admin' (PIN Super Admin, akses penuh) atau 'unit' (PIN unit, hanya menu
+   Operasional Harian untuk unitnya sendiri). APP_PIN disimpan di memori (dan sessionStorage
+   per tab, bukan localStorage) untuk dikirim ke aksi-aksi yang server-nya memverifikasi unit
+   dari PIN itu sendiri — bukan dari apa pun yang bisa diubah di browser. */
+let APP_ROLE = null;   // 'admin' | 'unit'
+let APP_PIN = '';
+let APP_UNIT = null;   // { id, name } — hanya terisi jika APP_ROLE==='unit'
 let donutChart = null, trendChart = null;
 let progCharts = {}, topCharts = {};
 let rekapPage = 0;
@@ -636,17 +766,21 @@ async function callGAS(action, payload){
 /* ============================= PERSISTENCE (Google Sheets via Apps Script) ============================= */
 async function loadState(){
   try{
-    const data = await callGAS('getData', {});
+    const data = await callGAS('getData', { pin: APP_PIN });
     STATE.batches = data.batches || [];
     STATE.transactions = data.transactions || [];
   }catch(e){ console.error(e); showToast('Gagal memuat data dari server: '+e.message); }
   try{
-    const a = await callGAS('getAnalysis', {});
+    const a = await callGAS('getAnalysis', { pin: APP_PIN });
     if(a && a.text) renderAnalysis(a.text);
   }catch(e){ console.error(e); }
   try{
-    const n = await callGAS('getNeracaAwal', {});
+    const n = await callGAS('getNeracaAwal', { pin: APP_PIN });
     STATE.neracaAwal = n || { tanggalAwal:'', items:[] };
+  }catch(e){ console.error(e); }
+  try{
+    const k = await callGAS('getKategoriHarian', {});
+    STATE.kategoriHarian = k || { Pendapatan:[], Pengeluaran:[] };
   }catch(e){ console.error(e); }
 }
 /* saveState() lama (bulk-save ke localStorage) sudah tidak dipakai — setiap perubahan
@@ -656,6 +790,9 @@ async function saveState(){ /* no-op: lihat callGAS per-aksi */ }
 
 /* ============================= NAV ============================= */
 function goView(name){
+  // PIN unit hanya boleh melihat menu Operasional Harian — jaga-jaga di sisi klien selain
+  // nav item lain memang disembunyikan, supaya tidak ada jalan tak sengaja ke menu lain.
+  if(APP_ROLE==='unit' && name!=='harian') name = 'harian';
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+name).classList.add('active');
   document.querySelectorAll('.navitem').forEach(b=>b.classList.toggle('active', b.dataset.view===name));
@@ -667,6 +804,8 @@ function goView(name){
   if(name==='capex') renderCapexDetail();
   if(name==='pengeluaran') renderPengeluaranDetail();
   if(name==='neraca') renderNeraca();
+  if(name==='harian') renderOperasionalHarian();
+  if(name==='aksesunit') renderManajemenAkses();
 }
 document.getElementById('navlist').addEventListener('click', e=>{
   const btn = e.target.closest('.navitem'); if(!btn) return;
@@ -910,7 +1049,7 @@ document.getElementById('btn-import').addEventListener('click', async ()=>{
   importBtn.disabled = true;
   log.innerHTML = `<span class="spinner"></span> Menyimpan ${newTx.length} transaksi ke Google Sheets...`;
   try{
-    await callGAS('importBatch', { batch, transactions: newTx });
+    await callGAS('importBatch', { pin: APP_PIN, batch, transactions: newTx });
     await loadState();
     log.textContent = `Berhasil mengimpor ${newTx.length} transaksi dari "${batchName}".`;
     showToast(`${newTx.length} transaksi berhasil diimpor`);
@@ -1161,7 +1300,7 @@ async function setCategoryManual(id, cat){
   t.kategori = cat; t.sumberKategori = 'manual'; // optimistic update
   renderRekap();
   try{
-    await callGAS('updateCategory', { id, kategori: cat });
+    await callGAS('updateCategory', { pin: APP_PIN, id, kategori: cat });
     showToast('Kategori diperbarui');
     renderDashboard();
   }catch(err){
@@ -1195,7 +1334,7 @@ function renderRiwayat(){
 async function deleteBatch(id){
   if(!confirm('Hapus dokumen ini beserta seluruh transaksinya? Tindakan ini tidak dapat dibatalkan.')) return;
   try{
-    await callGAS('deleteBatch', { batchId: id });
+    await callGAS('deleteBatch', { pin: APP_PIN, batchId: id });
     await loadState();
     renderRiwayat();
     renderDashboard();
@@ -1449,6 +1588,213 @@ function exportLabaRugi(){
 }
 document.getElementById('btn-export-labarugi').addEventListener('click', exportLabaRugi);
 
+/* ============================= OPERASIONAL HARIAN (KAS HARIAN) =============================
+   Pencatatan cepat pendapatan/pengeluaran operasional sehari-hari tanpa menunggu unggah file
+   bulanan. Setiap entri langsung tersimpan ke sheet Transaksi yang sama (via addKasHarian di
+   Code.gs) dengan kategori "Pendapatan" atau "OPEX", plus sub-kategori (KategoriRinci) bebas
+   yang bisa ditambah sendiri — sehingga otomatis ikut terhitung di Rincian OPEX & Laporan Laba
+   Rugi tanpa rekap manual terpisah. */
+function populateKategoriHarianSelect(){
+  const sel = document.getElementById('harian-kategori');
+  const list = (STATE.kategoriHarian && STATE.kategoriHarian[harianJenisAktif]) || [];
+  const prev = sel.value;
+  sel.innerHTML = list.map(k=>`<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
+  if(list.includes(prev)) sel.value = prev;
+}
+
+document.querySelectorAll('.harian-jenis-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    harianJenisAktif = btn.dataset.jenis;
+    document.querySelectorAll('.harian-jenis-btn').forEach(b=>b.classList.toggle('active', b===btn));
+    populateKategoriHarianSelect();
+  });
+});
+
+document.getElementById('btn-harian-kategori-baru').addEventListener('click', async ()=>{
+  const nama = (prompt(`Nama kategori ${harianJenisAktif} baru:`) || '').trim();
+  if(!nama) return;
+  try{
+    const k = await callGAS('addKategoriHarian', { jenis: harianJenisAktif, nama });
+    STATE.kategoriHarian = k;
+    populateKategoriHarianSelect();
+    document.getElementById('harian-kategori').value = nama;
+    showToast(`Kategori "${nama}" ditambahkan.`);
+  }catch(err){
+    showToast('Gagal menambah kategori: ' + err.message);
+  }
+});
+
+document.getElementById('btn-harian-tambah').addEventListener('click', async ()=>{
+  const btn = document.getElementById('btn-harian-tambah');
+  const tanggal = document.getElementById('harian-tanggal').value;
+  const kategori = document.getElementById('harian-kategori').value;
+  const nominal = Number(document.getElementById('harian-nominal').value || 0);
+  const keterangan = document.getElementById('harian-keterangan').value.trim();
+
+  if(!tanggal){ showToast('Tanggal wajib diisi.'); return; }
+  if(!kategori){ showToast('Pilih atau tambahkan kategori terlebih dahulu.'); return; }
+  if(!nominal || nominal<=0){ showToast('Nominal wajib diisi dan lebih dari 0.'); return; }
+
+  btn.disabled = true;
+  try{
+    // PIN unit -> aksi "...Unit" (server menentukan unit dari PIN); Super Admin -> aksi biasa
+    // (tanpa unit, "Pusat"). Ini mencegah PIN unit menulis entri tanpa label unit lewat endpoint admin.
+    if(APP_ROLE==='unit'){
+      await callGAS('addKasHarianUnit', { pin: APP_PIN, jenis: harianJenisAktif, tanggal, kategori, nominal, keterangan });
+    }else{
+      await callGAS('addKasHarian', { pin: APP_PIN, jenis: harianJenisAktif, tanggal, kategori, nominal, keterangan });
+      await loadState();
+    }
+    document.getElementById('harian-nominal').value = '';
+    document.getElementById('harian-keterangan').value = '';
+    showToast(`${harianJenisAktif} "${kategori}" sebesar ${fmtRp(nominal)} tersimpan.`);
+    renderOperasionalHarian();
+  }catch(err){
+    showToast('Gagal menyimpan: ' + err.message);
+  }
+  btn.disabled = false;
+});
+
+async function deleteKasHarianEntry(id){
+  if(!confirm('Hapus transaksi operasional harian ini?')) return;
+  try{
+    if(APP_ROLE==='unit'){
+      await callGAS('deleteKasHarianUnit', { pin: APP_PIN, id });
+    }else{
+      await callGAS('deleteKasHarian', { pin: APP_PIN, id });
+      await loadState();
+    }
+    showToast('Transaksi dihapus.');
+    renderOperasionalHarian();
+  }catch(err){
+    showToast('Gagal menghapus: ' + err.message);
+  }
+}
+
+async function renderOperasionalHarian(){
+  populateKategoriHarianSelect();
+
+  // Admin: pakai STATE.transactions yang sudah dimuat (semua unit + entri Pusat).
+  // PIN unit: ambil HANYA milik unitnya sendiri lewat endpoint ber-PIN (getKasHarianUnit) —
+  // tidak pernah memuat STATE.transactions penuh (yang berisi seluruh data keuangan RS).
+  let tx;
+  if(APP_ROLE==='unit'){
+    try{
+      const resp = await callGAS('getKasHarianUnit', { pin: APP_PIN });
+      tx = (resp && resp.transactions) || [];
+    }catch(err){
+      showToast('Gagal memuat data: ' + err.message);
+      tx = [];
+    }
+  }else{
+    tx = (STATE.transactions||[]).filter(t=>t.sumberKategori==='kas harian');
+  }
+
+  const todayStr = new Date().toISOString().slice(0,10);
+  const monthStr = todayStr.slice(0,7);
+
+  let pendapatanHari=0, pengeluaranHari=0, pendapatanBulan=0, pengeluaranBulan=0;
+  tx.forEach(t=>{
+    const v = Math.abs(t.amount);
+    const isPendapatan = t.kategori==='Pendapatan';
+    if(t.tanggal===todayStr){ if(isPendapatan) pendapatanHari+=v; else pengeluaranHari+=v; }
+    if((t.tanggal||'').slice(0,7)===monthStr){ if(isPendapatan) pendapatanBulan+=v; else pengeluaranBulan+=v; }
+  });
+  document.getElementById('harian-kpi-pendapatan-hari').textContent = fmtRp(pendapatanHari);
+  document.getElementById('harian-kpi-pengeluaran-hari').textContent = fmtRp(pengeluaranHari);
+  document.getElementById('harian-kpi-pendapatan-bulan').textContent = fmtRp(pendapatanBulan);
+  document.getElementById('harian-kpi-pengeluaran-bulan').textContent = fmtRp(pengeluaranBulan);
+
+  const sorted = tx.slice().sort((a,b)=> (b.tanggal||'').localeCompare(a.tanggal||'') || String(b.id).localeCompare(String(a.id)));
+  const tbody = document.getElementById('harian-list-tbody');
+  if(sorted.length===0){
+    tbody.innerHTML = '';
+    document.getElementById('harian-empty').style.display='block';
+  }else{
+    document.getElementById('harian-empty').style.display='none';
+    tbody.innerHTML = sorted.map(t=>{
+      const jenis = t.kategori==='Pendapatan' ? 'Pendapatan' : 'Pengeluaran';
+      const ket = t.kategoriRinci ? t.keterangan.replace(new RegExp('^'+t.kategoriRinci.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'( - )?'), '') : t.keterangan;
+      return `<tr>
+        <td>${escapeHtml(t.tanggal)}</td>
+        <td><span class="tag ${jenis}">${jenis}</span></td>
+        <td>${escapeHtml(t.kategoriRinci || '-')}</td>
+        <td>${escapeHtml(ket || '-')}</td>
+        <td style="text-align:right;" class="mono">${fmtRp(t.amount)}</td>
+        <td><button class="btn ghost" style="padding:4px 10px;font-size:11px;" onclick="deleteKasHarianEntry('${t.id}')">🗑</button></td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+/* ============================= MANAJEMEN AKSES UNIT (SUPER ADMIN) =============================
+   Membuat/mengubah/menonaktifkan/menghapus PIN tiap unit/bagian. Setiap pemanggilan menyertakan
+   PIN Super Admin (APP_PIN) karena server (Code.gs) memverifikasi semua aksi ini hanya berhasil
+   jika PIN tersebut benar-benar PIN Super Admin — bukan sekadar disembunyikan di tampilan. */
+async function renderManajemenAkses(){
+  const tbody = document.getElementById('akses-list-tbody');
+  const emptyEl = document.getElementById('akses-empty');
+  try{
+    const list = await callGAS('listUnitAkses', { pin: APP_PIN });
+    if(!list || list.length===0){
+      tbody.innerHTML = '';
+      emptyEl.style.display = 'block';
+      return;
+    }
+    emptyEl.style.display = 'none';
+    tbody.innerHTML = list.map(u=>`<tr>
+      <td>${escapeHtml(u.namaUnit)}</td>
+      <td class="mono">${escapeHtml(u.pin)}</td>
+      <td>${u.aktif ? '<span class="tag Pendapatan">Aktif</span>' : '<span class="tag Pengeluaran">Nonaktif</span>'}</td>
+      <td style="display:flex;gap:6px;">
+        <button class="btn ghost" style="padding:4px 10px;font-size:11px;" onclick="toggleUnitAkses('${u.id}', ${!u.aktif})">${u.aktif ? 'Nonaktifkan' : 'Aktifkan'}</button>
+        <button class="btn ghost" style="padding:4px 10px;font-size:11px;" onclick="hapusUnitAkses('${u.id}','${escapeHtml(u.namaUnit)}')">🗑</button>
+      </td>
+    </tr>`).join('');
+  }catch(err){
+    showToast('Gagal memuat daftar unit: ' + err.message);
+  }
+}
+
+document.getElementById('btn-akses-tambah').addEventListener('click', async ()=>{
+  const btn = document.getElementById('btn-akses-tambah');
+  const namaUnit = document.getElementById('akses-nama-unit').value.trim();
+  const unitPin = document.getElementById('akses-pin-unit').value.trim();
+  if(!namaUnit){ showToast('Nama unit wajib diisi.'); return; }
+  if(!unitPin || unitPin.length<4){ showToast('PIN unit wajib diisi, minimal 4 digit.'); return; }
+  btn.disabled = true;
+  try{
+    await callGAS('addUnitAkses', { pin: APP_PIN, namaUnit, unitPin });
+    document.getElementById('akses-nama-unit').value = '';
+    document.getElementById('akses-pin-unit').value = '';
+    showToast(`Unit "${namaUnit}" dibuat.`);
+    renderManajemenAkses();
+  }catch(err){
+    showToast('Gagal membuat unit: ' + err.message);
+  }
+  btn.disabled = false;
+});
+
+async function toggleUnitAkses(id, aktifBaru){
+  try{
+    await callGAS('updateUnitAkses', { pin: APP_PIN, id, aktif: aktifBaru });
+    renderManajemenAkses();
+  }catch(err){
+    showToast('Gagal mengubah status: ' + err.message);
+  }
+}
+
+async function hapusUnitAkses(id, namaUnit){
+  if(!confirm(`Hapus unit "${namaUnit}" beserta PIN-nya? Petugas unit ini tidak akan bisa masuk lagi.`)) return;
+  try{
+    await callGAS('deleteUnitAkses', { pin: APP_PIN, id });
+    showToast(`Unit "${namaUnit}" dihapus.`);
+    renderManajemenAkses();
+  }catch(err){
+    showToast('Gagal menghapus unit: ' + err.message);
+  }
+}
+
 /* ============================= NERACA ============================= */
 const NERACA_DEFAULTS = [
   ['Kas & Bank','Aset'], ['Piutang Usaha','Aset'], ['Aset Tetap (Awal)','Aset'], ['Aset Lainnya','Aset'],
@@ -1550,7 +1896,7 @@ document.getElementById('btn-save-neraca-awal').addEventListener('click', async 
   btn.disabled = true;
   log.innerHTML = `<span class="spinner"></span> Menyimpan saldo awal...`;
   try{
-    await callGAS('saveNeracaAwal', { tanggalAwal, items });
+    await callGAS('saveNeracaAwal', { pin: APP_PIN, tanggalAwal, items });
     STATE.neracaAwal = { tanggalAwal, items };
     document.getElementById('neraca-edit-panel').style.display='none';
     log.textContent = '';
@@ -1694,7 +2040,7 @@ Balas HANYA dengan JSON array valid, tanpa teks/markdown lain, format persis: [{
   if(pendingUpdates.length > 0){
     log.innerHTML = `<span class="spinner"></span> Menyimpan ${pendingUpdates.length} perubahan ke Google Sheets...`;
     try{
-      await callGAS('bulkUpdateCategories', { updates: pendingUpdates });
+      await callGAS('bulkUpdateCategories', { pin: APP_PIN, updates: pendingUpdates });
     }catch(err){
       console.error(err);
       showToast('Klasifikasi selesai, tapi gagal menyimpan sebagian ke server.');
@@ -1780,7 +2126,7 @@ Data:
   try{
     const text = await callClaude(prompt, 900);
     renderAnalysis(text);
-    await callGAS('saveAnalysis', { text });
+    await callGAS('saveAnalysis', { pin: APP_PIN, text });
     log.textContent = 'Analisis berhasil dibuat.';
   }catch(err){
     console.error(err);
@@ -1791,13 +2137,40 @@ Data:
 });
 
 /* ============================= PIN GATE ============================= */
+/** Menyesuaikan tampilan sidebar sesuai peran: PIN unit hanya melihat menu Operasional Harian
+ *  (nav item lain disembunyikan sepenuhnya, bukan sekadar dinonaktifkan), PIN Super Admin
+ *  melihat semua menu seperti biasa. */
+function applyRoleRestrictions(){
+  const unitMode = (APP_ROLE === 'unit');
+  document.querySelectorAll('.navitem').forEach(btn=>{
+    btn.style.display = unitMode ? (btn.dataset.view==='harian' ? 'flex' : 'none') : '';
+  });
+  const roleLabel = document.getElementById('side-foot-role');
+  roleLabel.textContent = unitMode ? `Unit: ${APP_UNIT ? APP_UNIT.name : ''}` : 'RSU Allam Medica · Super Admin';
+}
+
 async function startApp(){
   document.getElementById('pin-overlay').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
-  await loadState();
-  renderDashboard();
-  renderRekap();
-  renderRiwayat();
+  applyRoleRestrictions();
+  document.getElementById('harian-tanggal').value = new Date().toISOString().slice(0,10);
+
+  if(APP_ROLE === 'unit'){
+    // PIN unit: JANGAN memuat getData/getNeracaAwal/getAnalysis (data keuangan penuh RS) —
+    // cukup daftar kategori (dibagikan semua unit, tidak sensitif) lalu langsung ke Operasional
+    // Harian yang datanya sendiri sudah disaring server berdasarkan PIN (lihat renderOperasionalHarian).
+    try{
+      const k = await callGAS('getKategoriHarian', {});
+      STATE.kategoriHarian = k || { Pendapatan:[], Pengeluaran:[] };
+    }catch(e){ console.error(e); }
+    goView('harian');
+  }else{
+    await loadState();
+    renderDashboard();
+    renderRekap();
+    renderRiwayat();
+    populateKategoriHarianSelect();
+  }
 }
 
 async function trySubmitPin(){
@@ -1809,7 +2182,13 @@ async function trySubmitPin(){
   try{
     const res = await callGAS('checkPin', { pin });
     if(res.valid){
+      APP_ROLE = res.role;
+      APP_PIN = pin;
+      APP_UNIT = (res.role==='unit') ? { id: res.unitId, name: res.unitName } : null;
       sessionStorage.setItem('siak-rs-pin-ok', '1');
+      sessionStorage.setItem('siak-rs-role', APP_ROLE);
+      sessionStorage.setItem('siak-rs-pin', APP_PIN);
+      sessionStorage.setItem('siak-rs-unit', APP_UNIT ? JSON.stringify(APP_UNIT) : '');
       startApp();
     }else{
       errEl.textContent = 'PIN salah. Coba lagi.';
@@ -1822,9 +2201,22 @@ async function trySubmitPin(){
 document.getElementById('pin-submit').addEventListener('click', trySubmitPin);
 document.getElementById('pin-input').addEventListener('keydown', e=>{ if(e.key==='Enter') trySubmitPin(); });
 
+document.getElementById('btn-logout').addEventListener('click', (e)=>{
+  e.preventDefault();
+  sessionStorage.removeItem('siak-rs-pin-ok');
+  sessionStorage.removeItem('siak-rs-role');
+  sessionStorage.removeItem('siak-rs-pin');
+  sessionStorage.removeItem('siak-rs-unit');
+  location.reload();
+});
+
 /* ============================= INIT ============================= */
 (function init(){
   if(sessionStorage.getItem('siak-rs-pin-ok')==='1'){
+    APP_ROLE = sessionStorage.getItem('siak-rs-role') || 'admin';
+    APP_PIN = sessionStorage.getItem('siak-rs-pin') || '';
+    const unitRaw = sessionStorage.getItem('siak-rs-unit');
+    APP_UNIT = unitRaw ? JSON.parse(unitRaw) : null;
     startApp();
   }else{
     document.getElementById('pin-input').focus();
