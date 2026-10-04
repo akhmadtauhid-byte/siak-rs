@@ -389,9 +389,14 @@
           </div>
         </div>
 
-        <div style="display:flex;gap:10px;margin-top:14px;align-items:center;">
+        <div id="harian-edit-banner" style="display:none;background:#FFF6E0;border:1px solid #F0D898;border-radius:9px;padding:8px 14px;margin-top:12px;font-size:12.5px;color:var(--amber);font-weight:600;">
+          ✏️ Mode edit — mengubah transaksi yang sudah tersimpan.
+        </div>
+        <div style="display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap;">
           <button class="btn" id="btn-harian-tambah">+ Simpan Transaksi</button>
+          <button class="btn ghost" id="btn-harian-batal-edit" type="button" style="display:none;">Batal Edit</button>
           <button class="btn ghost" id="btn-harian-kategori-baru" type="button">+ Kategori Baru</button>
+          <button class="btn ghost" id="btn-harian-kategori-hapus" type="button">🗑 Hapus Kategori Terpilih</button>
         </div>
         <div class="note" style="margin-top:12px;">
           Pendapatan harian masuk sebagai <strong>Pendapatan</strong>; pengeluaran harian masuk sebagai <strong>OPEX</strong> (biaya usaha rutin) — keduanya langsung terhitung di Laporan Laba Rugi &amp; Rincian OPEX, dikelompokkan menurut kategori yang dipilih di atas.
@@ -1594,6 +1599,9 @@ document.getElementById('btn-export-labarugi').addEventListener('click', exportL
    Code.gs) dengan kategori "Pendapatan" atau "OPEX", plus sub-kategori (KategoriRinci) bebas
    yang bisa ditambah sendiri — sehingga otomatis ikut terhitung di Rincian OPEX & Laporan Laba
    Rugi tanpa rekap manual terpisah. */
+let editingKasHarianId = null; // null = mode tambah baru; terisi = sedang mengedit entri ini
+let harianTxCache = []; // entri yang sedang ditampilkan di tabel, dipakai saat tombol Edit diklik
+
 function populateKategoriHarianSelect(){
   const sel = document.getElementById('harian-kategori');
   const list = (STATE.kategoriHarian && STATE.kategoriHarian[harianJenisAktif]) || [];
@@ -1624,6 +1632,59 @@ document.getElementById('btn-harian-kategori-baru').addEventListener('click', as
   }
 });
 
+document.getElementById('btn-harian-kategori-hapus').addEventListener('click', async ()=>{
+  const sel = document.getElementById('harian-kategori');
+  const nama = sel.value;
+  if(!nama){ showToast('Tidak ada kategori yang dipilih.'); return; }
+  if(!confirm(`Hapus kategori "${nama}" (${harianJenisAktif}) dari daftar? Entri yang sudah tercatat dengan kategori ini tidak akan terhapus/berubah, hanya tidak muncul lagi sebagai pilihan baru.`)) return;
+  try{
+    const k = await callGAS('deleteKategoriHarian', { jenis: harianJenisAktif, nama });
+    STATE.kategoriHarian = k;
+    populateKategoriHarianSelect();
+    showToast(`Kategori "${nama}" dihapus dari daftar.`);
+  }catch(err){
+    showToast('Gagal menghapus kategori: ' + err.message);
+  }
+});
+
+/** Mengisi form dengan data entri yang mau diedit, lalu mengubah tombol "+ Simpan Transaksi"
+ *  jadi "Update Transaksi" sampai disimpan atau dibatalkan. */
+function startEditKasHarian(id){
+  const t = harianTxCache.find(x=>String(x.id)===String(id));
+  if(!t) return;
+  editingKasHarianId = id;
+  const jenis = t.kategori==='Pendapatan' ? 'Pendapatan' : 'Pengeluaran';
+  harianJenisAktif = jenis;
+  document.querySelectorAll('.harian-jenis-btn').forEach(b=>b.classList.toggle('active', b.dataset.jenis===jenis));
+  populateKategoriHarianSelect();
+  document.getElementById('harian-tanggal').value = t.tanggal || '';
+  const ket = t.kategoriRinci ? String(t.keterangan||'').replace(new RegExp('^'+t.kategoriRinci.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'( - )?'), '') : (t.keterangan||'');
+  document.getElementById('harian-keterangan').value = ket;
+  document.getElementById('harian-nominal').value = Math.abs(t.amount);
+  if(t.kategoriRinci){
+    // Pastikan kategori lama tetap terpilih meski bukan yang pertama di daftar.
+    const sel = document.getElementById('harian-kategori');
+    if(![...sel.options].some(o=>o.value===t.kategoriRinci)){
+      sel.insertAdjacentHTML('afterbegin', `<option value="${escapeHtml(t.kategoriRinci)}">${escapeHtml(t.kategoriRinci)}</option>`);
+    }
+    sel.value = t.kategoriRinci;
+  }
+  document.getElementById('btn-harian-tambah').textContent = '💾 Update Transaksi';
+  document.getElementById('btn-harian-batal-edit').style.display = 'inline-flex';
+  document.getElementById('harian-edit-banner').style.display = 'block';
+  document.getElementById('harian-tanggal').scrollIntoView({ behavior:'smooth', block:'center' });
+}
+
+function batalEditKasHarian(){
+  editingKasHarianId = null;
+  document.getElementById('btn-harian-tambah').textContent = '+ Simpan Transaksi';
+  document.getElementById('btn-harian-batal-edit').style.display = 'none';
+  document.getElementById('harian-edit-banner').style.display = 'none';
+  document.getElementById('harian-nominal').value = '';
+  document.getElementById('harian-keterangan').value = '';
+}
+document.getElementById('btn-harian-batal-edit').addEventListener('click', batalEditKasHarian);
+
 document.getElementById('btn-harian-tambah').addEventListener('click', async ()=>{
   const btn = document.getElementById('btn-harian-tambah');
   const tanggal = document.getElementById('harian-tanggal').value;
@@ -1638,16 +1699,22 @@ document.getElementById('btn-harian-tambah').addEventListener('click', async ()=
   btn.disabled = true;
   try{
     // PIN unit -> aksi "...Unit" (server menentukan unit dari PIN); Super Admin -> aksi biasa
-    // (tanpa unit, "Pusat"). Ini mencegah PIN unit menulis entri tanpa label unit lewat endpoint admin.
-    if(APP_ROLE==='unit'){
-      await callGAS('addKasHarianUnit', { pin: APP_PIN, jenis: harianJenisAktif, tanggal, kategori, nominal, keterangan });
+    // (tanpa unit, "Pusat"). Ini mencegah PIN unit menulis/mengubah entri tanpa label unit
+    // lewat endpoint admin, dan mencegah PIN unit mengedit entri milik unit lain.
+    if(editingKasHarianId){
+      const action = APP_ROLE==='unit' ? 'updateKasHarianUnit' : 'updateKasHarian';
+      await callGAS(action, { pin: APP_PIN, id: editingKasHarianId, jenis: harianJenisAktif, tanggal, kategori, nominal, keterangan });
+      if(APP_ROLE!=='unit') await loadState();
+      showToast(`Transaksi "${kategori}" sebesar ${fmtRp(nominal)} diperbarui.`);
+      batalEditKasHarian();
     }else{
-      await callGAS('addKasHarian', { pin: APP_PIN, jenis: harianJenisAktif, tanggal, kategori, nominal, keterangan });
-      await loadState();
+      const action = APP_ROLE==='unit' ? 'addKasHarianUnit' : 'addKasHarian';
+      await callGAS(action, { pin: APP_PIN, jenis: harianJenisAktif, tanggal, kategori, nominal, keterangan });
+      if(APP_ROLE!=='unit') await loadState();
+      document.getElementById('harian-nominal').value = '';
+      document.getElementById('harian-keterangan').value = '';
+      showToast(`${harianJenisAktif} "${kategori}" sebesar ${fmtRp(nominal)} tersimpan.`);
     }
-    document.getElementById('harian-nominal').value = '';
-    document.getElementById('harian-keterangan').value = '';
-    showToast(`${harianJenisAktif} "${kategori}" sebesar ${fmtRp(nominal)} tersimpan.`);
     renderOperasionalHarian();
   }catch(err){
     showToast('Gagal menyimpan: ' + err.message);
@@ -1664,6 +1731,7 @@ async function deleteKasHarianEntry(id){
       await callGAS('deleteKasHarian', { pin: APP_PIN, id });
       await loadState();
     }
+    if(String(editingKasHarianId)===String(id)) batalEditKasHarian();
     showToast('Transaksi dihapus.');
     renderOperasionalHarian();
   }catch(err){
@@ -1706,6 +1774,7 @@ async function renderOperasionalHarian(){
   document.getElementById('harian-kpi-pengeluaran-bulan').textContent = fmtRp(pengeluaranBulan);
 
   const sorted = tx.slice().sort((a,b)=> (b.tanggal||'').localeCompare(a.tanggal||'') || String(b.id).localeCompare(String(a.id)));
+  harianTxCache = sorted; // dipakai startEditKasHarian() saat tombol ✏️ diklik
   const tbody = document.getElementById('harian-list-tbody');
   if(sorted.length===0){
     tbody.innerHTML = '';
@@ -1721,7 +1790,10 @@ async function renderOperasionalHarian(){
         <td>${escapeHtml(t.kategoriRinci || '-')}</td>
         <td>${escapeHtml(ket || '-')}</td>
         <td style="text-align:right;" class="mono">${fmtRp(t.amount)}</td>
-        <td><button class="btn ghost" style="padding:4px 10px;font-size:11px;" onclick="deleteKasHarianEntry('${t.id}')">🗑</button></td>
+        <td style="display:flex;gap:6px;">
+          <button class="btn ghost" style="padding:4px 10px;font-size:11px;" onclick="startEditKasHarian('${t.id}')">✏️</button>
+          <button class="btn ghost" style="padding:4px 10px;font-size:11px;" onclick="deleteKasHarianEntry('${t.id}')">🗑</button>
+        </td>
       </tr>`;
     }).join('');
   }
