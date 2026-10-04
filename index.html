@@ -161,6 +161,7 @@
       <button class="navitem active" data-view="dashboard">📊&nbsp; Ringkasan</button>
       <button class="navitem" data-view="upload">⬆️&nbsp; Unggah Dokumen</button>
       <button class="navitem" data-view="rekap">📋&nbsp; Rekap Transaksi</button>
+      <button class="navitem" data-view="opex">🧾&nbsp; Rincian OPEX</button>
       <button class="navitem" data-view="capex">🏗️&nbsp; Rincian CAPEX</button>
       <button class="navitem" data-view="neraca">⚖️&nbsp; Neraca</button>
       <button class="navitem" data-view="ai">🤖&nbsp; Analisis AI</button>
@@ -339,6 +340,41 @@
       </div>
     </section>
 
+    <!-- OPEX DETAIL -->
+    <section class="view" id="view-opex">
+      <div class="topbar">
+        <div>
+          <div class="pagetitle">Rincian OPEX</div>
+          <div class="pagesub" id="opex-sub">0 transaksi OPEX</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn secondary" id="btn-export-opex">⬇ Unduh Rincian (Excel)</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div id="opex-empty" class="empty" style="display:none;">
+          <h3>Belum ada transaksi OPEX</h3>
+          <p>Transaksi berkategori OPEX akan muncul di sini secara otomatis setelah diunggah/diklasifikasikan.</p>
+        </div>
+        <div id="opex-content" style="display:none;">
+          <div class="card-title" style="margin-bottom:10px;">Per Item x Bulan (dengan % Porsi dari Total OPEX)</div>
+          <div class="tablewrap">
+            <table id="opex-pivot-table"></table>
+          </div>
+          <div class="card-title" style="margin:22px 0 10px;">Rincian Transaksi</div>
+          <div class="tablewrap">
+            <table>
+              <thead>
+                <tr><th>Tanggal</th><th>Keterangan</th><th>Dokumen</th><th style="text-align:right;">Nominal</th></tr>
+              </thead>
+              <tbody id="opex-detail-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- CAPEX DETAIL -->
     <section class="view" id="view-capex">
       <div class="topbar">
@@ -357,7 +393,7 @@
           <p>Transaksi berkategori CAPEX akan muncul di sini secara otomatis setelah diunggah/diklasifikasikan.</p>
         </div>
         <div id="capex-content" style="display:none;">
-          <div class="card-title" style="margin-bottom:10px;">Per Item x Bulan</div>
+          <div class="card-title" style="margin-bottom:10px;">Per Item x Bulan (dengan % Porsi dari Total CAPEX)</div>
           <div class="tablewrap">
             <table id="capex-pivot-table"></table>
           </div>
@@ -536,6 +572,7 @@ function goView(name){
   if(name==='dashboard') renderDashboard();
   if(name==='rekap') renderRekap();
   if(name==='riwayat') renderRiwayat();
+  if(name==='opex') renderOpexDetail();
   if(name==='capex') renderCapexDetail();
   if(name==='neraca') renderNeraca();
 }
@@ -1045,19 +1082,9 @@ async function deleteBatch(id){
   }
 }
 
-/* ============================= RINCIAN CAPEX ============================= */
-function renderCapexDetail(){
-  const tx = STATE.transactions.filter(t=>t.kategori==='CAPEX');
-  document.getElementById('capex-sub').textContent = `${tx.length} transaksi CAPEX`;
-  const empty = document.getElementById('capex-empty');
-  const content = document.getElementById('capex-content');
-  if(tx.length===0){
-    empty.style.display='block'; content.style.display='none';
-    return;
-  }
-  empty.style.display='none'; content.style.display='block';
-
-  // Pivot: item (keterangan) x bulan (YYYY-MM), only rows with a real date
+/* ============================= RINCIAN PER KATEGORI (OPEX / CAPEX) ============================= */
+function buildCategoryPivot(kategori){
+  const tx = STATE.transactions.filter(t=>t.kategori===kategori);
   const byItemMonth = {}; // { keterangan: { "2026-01": total, ... } }
   const monthsSet = new Set();
   tx.forEach(t=>{
@@ -1072,35 +1099,47 @@ function renderCapexDetail(){
     const totalB = Object.values(byItemMonth[b]).reduce((s,v)=>s+v,0);
     return totalB - totalA;
   });
-
-  const monthLabel = m => m==='Tidak diketahui' ? m : new Date(m+'-01').toLocaleDateString('id-ID',{month:'short',year:'numeric'});
   const hasUnknown = Object.values(byItemMonth).some(m=>m['Tidak diketahui']);
   const colKeys = hasUnknown ? [...months, 'Tidak diketahui'] : months;
+  return { tx, byItemMonth, items, colKeys };
+}
 
-  let html = '<thead><tr><th>Item</th>' + colKeys.map(m=>`<th style="text-align:right;">${monthLabel(m)}</th>`).join('') + '<th style="text-align:right;">Total</th></tr></thead><tbody>';
-  const colTotals = {}; colKeys.forEach(m=>colTotals[m]=0);
+function renderCategoryPivotTable(tableElId, kategoriLabel, pivot){
+  const { byItemMonth, items, colKeys } = pivot;
+  const monthLabel = m => m==='Tidak diketahui' ? m : new Date(m+'-01').toLocaleDateString('id-ID',{month:'short',year:'numeric'});
+
+  const rowTotals = {};
   let grandTotal = 0;
   items.forEach(item=>{
-    let rowTotal = 0;
+    const t = colKeys.reduce((s,m)=> s + (byItemMonth[item][m]||0), 0);
+    rowTotals[item] = t; grandTotal += t;
+  });
+
+  let html = '<thead><tr><th>Item</th>' + colKeys.map(m=>`<th style="text-align:right;">${monthLabel(m)}</th>`).join('') +
+    '<th style="text-align:right;">Total</th><th style="text-align:right;">% Porsi</th></tr></thead><tbody>';
+  const colTotals = {}; colKeys.forEach(m=>colTotals[m]=0);
+  items.forEach(item=>{
     html += `<tr><td style="font-weight:600;">${escapeHtml(item)}</td>`;
     colKeys.forEach(m=>{
       const v = byItemMonth[item][m]||0;
-      rowTotal += v; colTotals[m] += v;
+      colTotals[m] += v;
       html += `<td style="text-align:right;${v?'':'color:var(--muted);'}">${v?fmtRp(v):'—'}</td>`;
     });
-    grandTotal += rowTotal;
-    html += `<td style="text-align:right;font-weight:600;">${fmtRp(rowTotal)}</td></tr>`;
+    const pct = grandTotal ? (rowTotals[item]/grandTotal*100) : 0;
+    html += `<td style="text-align:right;font-weight:600;">${fmtRp(rowTotals[item])}</td>`;
+    html += `<td style="text-align:right;" class="mono">${pct.toFixed(1)}%</td></tr>`;
   });
-  html += `<tr style="font-weight:700;border-top:2px solid var(--border);"><td>TOTAL CAPEX</td>` +
+  html += `<tr style="font-weight:700;border-top:2px solid var(--border);"><td>TOTAL ${kategoriLabel}</td>` +
     colKeys.map(m=>`<td style="text-align:right;">${fmtRp(colTotals[m])}</td>`).join('') +
-    `<td style="text-align:right;">${fmtRp(grandTotal)}</td></tr>`;
+    `<td style="text-align:right;">${fmtRp(grandTotal)}</td><td style="text-align:right;">100.0%</td></tr>`;
   html += '</tbody>';
-  document.getElementById('capex-pivot-table').innerHTML = html;
+  document.getElementById(tableElId).innerHTML = html;
+}
 
-  // Flat detail list, most recent first
+function renderCategoryDetailList(tbodyId, tx){
   const batchMap = {}; STATE.batches.forEach(b=>batchMap[b.id]=b.name);
   const sorted = tx.slice().sort((a,b)=> (b.tanggal||'').localeCompare(a.tanggal||''));
-  document.getElementById('capex-detail-tbody').innerHTML = sorted.map(t=>`
+  document.getElementById(tbodyId).innerHTML = sorted.map(t=>`
     <tr>
       <td>${escapeHtml(t.tanggal||'-')}</td>
       <td>${escapeHtml(t.keterangan)}</td>
@@ -1109,20 +1148,45 @@ function renderCapexDetail(){
     </tr>`).join('');
 }
 
-function exportCapex(){
-  const tx = STATE.transactions.filter(t=>t.kategori==='CAPEX');
-  if(tx.length===0){ showToast('Belum ada transaksi CAPEX untuk diunduh.'); return; }
+function renderCapexDetail(){
+  const pivot = buildCategoryPivot('CAPEX');
+  document.getElementById('capex-sub').textContent = `${pivot.tx.length} transaksi CAPEX`;
+  const empty = document.getElementById('capex-empty');
+  const content = document.getElementById('capex-content');
+  if(pivot.tx.length===0){ empty.style.display='block'; content.style.display='none'; return; }
+  empty.style.display='none'; content.style.display='block';
+  renderCategoryPivotTable('capex-pivot-table', 'CAPEX', pivot);
+  renderCategoryDetailList('capex-detail-tbody', pivot.tx);
+}
+
+function renderOpexDetail(){
+  const pivot = buildCategoryPivot('OPEX');
+  document.getElementById('opex-sub').textContent = `${pivot.tx.length} transaksi OPEX`;
+  const empty = document.getElementById('opex-empty');
+  const content = document.getElementById('opex-content');
+  if(pivot.tx.length===0){ empty.style.display='block'; content.style.display='none'; return; }
+  empty.style.display='none'; content.style.display='block';
+  renderCategoryPivotTable('opex-pivot-table', 'OPEX', pivot);
+  renderCategoryDetailList('opex-detail-tbody', pivot.tx);
+}
+
+function exportCategoryDetail(kategori, label){
+  const tx = STATE.transactions.filter(t=>t.kategori===kategori);
+  if(tx.length===0){ showToast(`Belum ada transaksi ${label} untuk diunduh.`); return; }
   const batchMap = {}; STATE.batches.forEach(b=>batchMap[b.id]=b.name);
-  const rows = [['Tanggal','Keterangan','Dokumen Sumber','Kode Akun','Nominal']]
+  const total = tx.reduce((s,t)=>s+Math.abs(t.amount),0) || 1;
+  const rows = [['Tanggal','Keterangan','Dokumen Sumber','Kode Akun','Nominal','% Porsi']]
     .concat(tx.slice().sort((a,b)=>(a.tanggal||'').localeCompare(b.tanggal||'')).map(t=>[
-      t.tanggal||'', t.keterangan, batchMap[t.batchId]||'', t.kodeAkun||'', Math.abs(t.amount)
+      t.tanggal||'', t.keterangan, batchMap[t.batchId]||'', t.kodeAkun||'', Math.abs(t.amount),
+      ((Math.abs(t.amount)/total)*100).toFixed(1)+'%'
     ]));
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Rincian CAPEX');
-  XLSX.writeFile(wb, `Rincian_CAPEX_SIAK-RS_${new Date().toISOString().slice(0,10)}.xlsx`);
+  XLSX.utils.book_append_sheet(wb, ws, `Rincian ${label}`);
+  XLSX.writeFile(wb, `Rincian_${label}_SIAK-RS_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
-document.getElementById('btn-export-capex').addEventListener('click', exportCapex);
+document.getElementById('btn-export-capex').addEventListener('click', ()=>exportCategoryDetail('CAPEX','CAPEX'));
+document.getElementById('btn-export-opex').addEventListener('click', ()=>exportCategoryDetail('OPEX','OPEX'));
 
 /* ============================= NERACA ============================= */
 const NERACA_DEFAULTS = [
