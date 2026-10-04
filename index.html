@@ -162,6 +162,7 @@
       <button class="navitem" data-view="upload">⬆️&nbsp; Unggah Dokumen</button>
       <button class="navitem" data-view="rekap">📋&nbsp; Rekap Transaksi</button>
       <button class="navitem" data-view="capex">🏗️&nbsp; Rincian CAPEX</button>
+      <button class="navitem" data-view="neraca">⚖️&nbsp; Neraca</button>
       <button class="navitem" data-view="ai">🤖&nbsp; Analisis AI</button>
       <button class="navitem" data-view="riwayat">🕘&nbsp; Riwayat Unggahan</button>
       <a class="navitem" href="direksi.html" style="text-decoration:none;display:flex;">👔&nbsp; Mode Direksi</a>
@@ -373,6 +374,57 @@
       </div>
     </section>
 
+    <!-- NERACA -->
+    <section class="view" id="view-neraca">
+      <div class="topbar">
+        <div>
+          <div class="pagetitle">Neraca (Posisi Keuangan)</div>
+          <div class="pagesub" id="neraca-sub">—</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn secondary" id="btn-edit-neraca-awal">✎ Edit Saldo Awal</button>
+          <button class="btn secondary" id="btn-export-neraca">⬇ Unduh Neraca (Excel)</button>
+        </div>
+      </div>
+
+      <div class="note" style="margin-bottom:14px;">
+        Neraca dihitung dari <strong>Saldo Awal</strong> (diisi manual satu kali — mis. dari Neraca penutupan bulan/tahun sebelumnya) ditambah <strong>pergerakan otomatis</strong> dari seluruh transaksi yang sudah diunggah ke SIAK-RS: CAPEX menambah Aset Tetap, selisih Pendapatan dikurangi seluruh Biaya (OPEX &amp; Pengeluaran Lain) menjadi penambah/pengurang Kas sekaligus Laba (Rugi) Tahun Berjalan. Baris Piutang, Kewajiban, dan Modal Disetor tidak bergerak otomatis karena SIAK-RS belum mencatat transaksi jenis itu — perbarui manual lewat "Edit Saldo Awal" bila ada perubahan.
+      </div>
+
+      <div id="neraca-edit-panel" class="card" style="display:none;margin-bottom:16px;">
+        <div class="card-title">Edit Saldo Awal Neraca</div>
+        <div class="field">
+          <label>Tanggal saldo awal berlaku</label>
+          <input type="date" class="textinput" id="neraca-tgl-awal" style="max-width:220px;">
+        </div>
+        <div id="neraca-edit-fields" style="display:grid;grid-template-columns:1fr 1fr;gap:12px 20px;margin-top:6px;"></div>
+        <div style="display:flex;gap:10px;margin-top:14px;">
+          <button class="btn" id="btn-save-neraca-awal">Simpan Saldo Awal</button>
+          <button class="btn ghost" id="btn-cancel-neraca-awal">Batal</button>
+        </div>
+        <div class="ailog" id="neraca-save-log"></div>
+      </div>
+
+      <div class="row2">
+        <div class="card">
+          <div class="card-title">ASET</div>
+          <table><tbody id="neraca-aset-tbody"></tbody></table>
+        </div>
+        <div class="card">
+          <div class="card-title">KEWAJIBAN &amp; EKUITAS</div>
+          <table><tbody id="neraca-ke-tbody"></tbody></table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+          <div class="card-title" style="margin:0;">Selisih (Total Aset − Total Kewajiban &amp; Ekuitas)</div>
+          <div class="kpi-val mono" id="neraca-selisih">Rp 0</div>
+        </div>
+        <div class="kpi-sub" id="neraca-selisih-sub" style="margin-top:4px;"></div>
+      </div>
+    </section>
+
     <!-- AI ANALYSIS -->
     <section class="view" id="view-ai">
       <div class="topbar">
@@ -414,7 +466,7 @@
 
 <script>
 /* ============================= STATE ============================= */
-let STATE = { batches: [], transactions: [] };
+let STATE = { batches: [], transactions: [], neracaAwal: { tanggalAwal:'', items:[] } };
 let donutChart = null, trendChart = null;
 let progCharts = {}, topCharts = {};
 let rekapPage = 0;
@@ -466,6 +518,10 @@ async function loadState(){
     const a = await callGAS('getAnalysis', {});
     if(a && a.text) renderAnalysis(a.text);
   }catch(e){ console.error(e); }
+  try{
+    const n = await callGAS('getNeracaAwal', {});
+    STATE.neracaAwal = n || { tanggalAwal:'', items:[] };
+  }catch(e){ console.error(e); }
 }
 /* saveState() lama (bulk-save ke localStorage) sudah tidak dipakai — setiap perubahan
    (impor, ubah kategori, hapus batch) langsung memanggil endpoint GAS masing-masing,
@@ -481,6 +537,7 @@ function goView(name){
   if(name==='rekap') renderRekap();
   if(name==='riwayat') renderRiwayat();
   if(name==='capex') renderCapexDetail();
+  if(name==='neraca') renderNeraca();
 }
 document.getElementById('navlist').addEventListener('click', e=>{
   const btn = e.target.closest('.navitem'); if(!btn) return;
@@ -1066,6 +1123,161 @@ function exportCapex(){
   XLSX.writeFile(wb, `Rincian_CAPEX_SIAK-RS_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 document.getElementById('btn-export-capex').addEventListener('click', exportCapex);
+
+/* ============================= NERACA ============================= */
+const NERACA_DEFAULTS = [
+  ['Kas & Bank','Aset'], ['Piutang Usaha','Aset'], ['Aset Tetap (Awal)','Aset'], ['Aset Lainnya','Aset'],
+  ['Kewajiban Jangka Pendek','Kewajiban'], ['Kewajiban Jangka Panjang','Kewajiban'],
+  ['Modal Disetor','Ekuitas'], ['Laba Ditahan (Awal)','Ekuitas'],
+];
+function neracaFind(items, pos){
+  const it = (items||[]).find(i=>i.pos===pos);
+  return it ? Number(it.saldo)||0 : 0;
+}
+function computeNeracaMovement(){
+  // Transaksi SIAK-RS adalah arus kas berkategori, bukan jurnal berpasangan penuh, jadi
+  // pergerakan Neraca didekati sebagai berikut:
+  // - CAPEX: kas berkurang, Aset Tetap bertambah sebesar nilai yang sama (netral di Total Aset)
+  // - Pendapatan/OPEX/Pengeluaran: langsung menambah/mengurangi Kas
+  // - Laba (Rugi) Berjalan (penambah Ekuitas) = Pendapatan − OPEX − Pengeluaran (CAPEX tidak
+  //   dihitung sebagai biaya karena menjadi aset, bukan beban)
+  const sums = { Pendapatan:0, OPEX:0, CAPEX:0, Pengeluaran:0 };
+  STATE.transactions.forEach(t=> sums[t.kategori] = (sums[t.kategori]||0) + Math.abs(t.amount) );
+  const labaBerjalan = sums.Pendapatan - sums.OPEX - sums.Pengeluaran;
+  const kasMovement = sums.Pendapatan - sums.OPEX - sums.CAPEX - sums.Pengeluaran;
+  const asetTetapMovement = sums.CAPEX;
+  return { sums, labaBerjalan, kasMovement, asetTetapMovement };
+}
+function renderNeraca(){
+  const items = (STATE.neracaAwal && STATE.neracaAwal.items) || [];
+  const tglAwal = (STATE.neracaAwal && STATE.neracaAwal.tanggalAwal) || '';
+  const dates = STATE.transactions.map(t=>t.tanggal).filter(t=>/^\d{4}-\d{2}-\d{2}$/.test(t)).sort();
+  const perTanggal = dates.length ? dates[dates.length-1] : (tglAwal || '—');
+  document.getElementById('neraca-sub').textContent = tglAwal
+    ? `Per ${perTanggal} · saldo awal per ${tglAwal} + pergerakan transaksi yang sudah diunggah`
+    : `Per ${perTanggal} · saldo awal belum diisi — klik "Edit Saldo Awal" untuk mulai`;
+
+  const { labaBerjalan, kasMovement, asetTetapMovement } = computeNeracaMovement();
+
+  const kasAkhir = neracaFind(items,'Kas & Bank') + kasMovement;
+  const piutang = neracaFind(items,'Piutang Usaha');
+  const asetTetapAkhir = (neracaFind(items,'Aset Tetap (Awal)') || neracaFind(items,'Aset Tetap')) + asetTetapMovement;
+  const asetLain = neracaFind(items,'Aset Lainnya');
+  const totalAset = kasAkhir + piutang + asetTetapAkhir + asetLain;
+
+  const kjp = neracaFind(items,'Kewajiban Jangka Pendek');
+  const kjpj = neracaFind(items,'Kewajiban Jangka Panjang');
+  const modal = neracaFind(items,'Modal Disetor');
+  const labaDitahan = neracaFind(items,'Laba Ditahan (Awal)') || neracaFind(items,'Laba Ditahan');
+  const totalKewajiban = kjp + kjpj;
+  const totalEkuitas = modal + labaDitahan + labaBerjalan;
+  const totalKE = totalKewajiban + totalEkuitas;
+
+  const row = (label, val, bold) => `<tr${bold?' style="font-weight:700;border-top:2px solid var(--border);"':''}>
+    <td>${label}</td><td style="text-align:right;" class="mono">${fmtRp(val)}</td></tr>`;
+
+  document.getElementById('neraca-aset-tbody').innerHTML =
+    row('Kas &amp; Bank', kasAkhir) +
+    row('Piutang Usaha', piutang) +
+    row('Aset Tetap', asetTetapAkhir) +
+    row('Aset Lainnya', asetLain) +
+    row('TOTAL ASET', totalAset, true);
+
+  document.getElementById('neraca-ke-tbody').innerHTML =
+    row('Kewajiban Jangka Pendek', kjp) +
+    row('Kewajiban Jangka Panjang', kjpj) +
+    row('Modal Disetor', modal) +
+    row('Laba Ditahan (Awal)', labaDitahan) +
+    row(`Laba (Rugi) Tahun Berjalan${labaBerjalan<0?' <span style="color:var(--red);font-size:11px;">(rugi)</span>':''}`, labaBerjalan) +
+    row('TOTAL KEWAJIBAN &amp; EKUITAS', totalKE, true);
+
+  const selisih = totalAset - totalKE;
+  const selEl = document.getElementById('neraca-selisih');
+  selEl.textContent = fmtRp(selisih);
+  selEl.style.color = Math.abs(selisih) < 1 ? 'var(--green)' : 'var(--red)';
+  document.getElementById('neraca-selisih-sub').textContent = Math.abs(selisih) < 1
+    ? 'Neraca seimbang (Total Aset = Total Kewajiban + Ekuitas).'
+    : 'Neraca belum seimbang. Ini biasanya berarti Saldo Awal yang diisi di "Edit Saldo Awal" belum balance sebelum pergerakan transaksi ditambahkan — cek kembali angka saldo awal (Aset harus = Kewajiban + Ekuitas pada tanggal awal tersebut).';
+}
+function buildNeracaEditFields(){
+  const existing = (STATE.neracaAwal && STATE.neracaAwal.items && STATE.neracaAwal.items.length) ? STATE.neracaAwal.items : null;
+  const items = existing || NERACA_DEFAULTS.map(([pos,kelompok])=>({pos,kelompok,saldo:0}));
+  document.getElementById('neraca-tgl-awal').value = (STATE.neracaAwal && STATE.neracaAwal.tanggalAwal) || '';
+  document.getElementById('neraca-edit-fields').innerHTML = items.map(it=>`
+    <div class="field" style="margin-bottom:0;">
+      <label>${escapeHtml(it.pos)} <span style="color:#A9BAC5;">(${escapeHtml(it.kelompok)})</span></label>
+      <input type="text" class="textinput neraca-field" data-pos="${escapeHtml(it.pos)}" data-kelompok="${escapeHtml(it.kelompok)}" value="${Math.round(Number(it.saldo)||0)}">
+    </div>`).join('');
+}
+document.getElementById('btn-edit-neraca-awal').addEventListener('click', ()=>{
+  buildNeracaEditFields();
+  document.getElementById('neraca-edit-panel').style.display='block';
+});
+document.getElementById('btn-cancel-neraca-awal').addEventListener('click', ()=>{
+  document.getElementById('neraca-edit-panel').style.display='none';
+});
+document.getElementById('btn-save-neraca-awal').addEventListener('click', async ()=>{
+  const log = document.getElementById('neraca-save-log');
+  const btn = document.getElementById('btn-save-neraca-awal');
+  const tanggalAwal = document.getElementById('neraca-tgl-awal').value || '';
+  const fields = Array.from(document.querySelectorAll('.neraca-field'));
+  const items = fields.map(f=>({ pos: f.dataset.pos, kelompok: f.dataset.kelompok, saldo: Number(String(f.value).replace(/[^\d.-]/g,''))||0 }));
+  btn.disabled = true;
+  log.innerHTML = `<span class="spinner"></span> Menyimpan saldo awal...`;
+  try{
+    await callGAS('saveNeracaAwal', { tanggalAwal, items });
+    STATE.neracaAwal = { tanggalAwal, items };
+    document.getElementById('neraca-edit-panel').style.display='none';
+    log.textContent = '';
+    renderNeraca();
+    showToast('Saldo awal neraca disimpan');
+  }catch(err){
+    console.error(err);
+    log.textContent = 'Gagal menyimpan: ' + err.message;
+  }
+  btn.disabled = false;
+});
+function exportNeraca(){
+  const items = (STATE.neracaAwal && STATE.neracaAwal.items) || [];
+  const { labaBerjalan, kasMovement, asetTetapMovement } = computeNeracaMovement();
+  const kasAkhir = neracaFind(items,'Kas & Bank') + kasMovement;
+  const piutang = neracaFind(items,'Piutang Usaha');
+  const asetTetapAkhir = (neracaFind(items,'Aset Tetap (Awal)') || neracaFind(items,'Aset Tetap')) + asetTetapMovement;
+  const asetLain = neracaFind(items,'Aset Lainnya');
+  const totalAset = kasAkhir + piutang + asetTetapAkhir + asetLain;
+  const kjp = neracaFind(items,'Kewajiban Jangka Pendek');
+  const kjpj = neracaFind(items,'Kewajiban Jangka Panjang');
+  const modal = neracaFind(items,'Modal Disetor');
+  const labaDitahan = neracaFind(items,'Laba Ditahan (Awal)') || neracaFind(items,'Laba Ditahan');
+  const totalKewajiban = kjp+kjpj, totalEkuitas = modal+labaDitahan+labaBerjalan;
+  const rows = [
+    ['RSU ALLAM MEDICA — NERACA (POSISI KEUANGAN)'],
+    ['Diunduh pada', new Date().toLocaleString('id-ID')],
+    [],
+    ['ASET','Nominal (Rp)'],
+    ['Kas & Bank', kasAkhir],
+    ['Piutang Usaha', piutang],
+    ['Aset Tetap', asetTetapAkhir],
+    ['Aset Lainnya', asetLain],
+    ['TOTAL ASET', totalAset],
+    [],
+    ['KEWAJIBAN & EKUITAS','Nominal (Rp)'],
+    ['Kewajiban Jangka Pendek', kjp],
+    ['Kewajiban Jangka Panjang', kjpj],
+    ['Modal Disetor', modal],
+    ['Laba Ditahan (Awal)', labaDitahan],
+    ['Laba (Rugi) Tahun Berjalan', labaBerjalan],
+    ['TOTAL KEWAJIBAN & EKUITAS', totalKewajiban+totalEkuitas],
+    [],
+    ['Selisih (Aset - Kewajiban&Ekuitas)', totalAset-(totalKewajiban+totalEkuitas)],
+  ];
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:34},{wch:20}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Neraca');
+  XLSX.writeFile(wb, `Neraca_SIAK-RS_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+document.getElementById('btn-export-neraca').addEventListener('click', exportNeraca);
 
 /* ============================= EXPORT ============================= */
 function exportRekap(){
