@@ -102,6 +102,8 @@
   .amt-out{color:var(--red);font-weight:600;}
 
   .filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:center;}
+  .rekap-totals{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px;}
+  @media (max-width:1000px){.rekap-totals{grid-template-columns:repeat(2,1fr);}}
   .filters select,.filters input{width:auto;min-width:140px;}
   .filters .grow{flex:1;min-width:180px;}
 
@@ -496,6 +498,36 @@
             <option value="Pengeluaran">Pengeluaran</option>
           </select>
           <select id="f-batch"><option value="">Semua Dokumen</option></select>
+        </div>
+        <div class="filters">
+          <label style="font-size:11.5px;color:var(--muted);">Dari</label>
+          <input type="date" class="textinput" id="f-tgl-dari">
+          <label style="font-size:11.5px;color:var(--muted);">Sampai</label>
+          <input type="date" class="textinput" id="f-tgl-sampai">
+          <button class="btn ghost" id="btn-rekap-reset-tgl" type="button" style="font-size:12px;padding:8px 14px;">Reset Tanggal</button>
+        </div>
+
+        <div class="rekap-totals" id="rekap-totals">
+          <div class="kpi">
+            <div class="kpi-label">PENDAPATAN</div>
+            <div class="kpi-val mono" id="rekap-total-pendapatan">Rp 0</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">OPEX</div>
+            <div class="kpi-val mono" id="rekap-total-opex">Rp 0</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">CAPEX</div>
+            <div class="kpi-val mono" id="rekap-total-capex">Rp 0</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">PENGELUARAN LAIN</div>
+            <div class="kpi-val mono" id="rekap-total-pengeluaran">Rp 0</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">SELISIH BERSIH</div>
+            <div class="kpi-val mono" id="rekap-total-bersih">Rp 0</div>
+          </div>
         </div>
 
         <div id="rekap-empty" class="empty" style="display:none;">
@@ -1236,10 +1268,14 @@ function currentFilteredTx(){
   const q = document.getElementById('f-search').value.trim().toLowerCase();
   const kat = document.getElementById('f-kategori').value;
   const batch = document.getElementById('f-batch').value;
+  const dari = document.getElementById('f-tgl-dari').value;
+  const sampai = document.getElementById('f-tgl-sampai').value;
   return STATE.transactions.filter(t=>{
     if(q && !t.keterangan.toLowerCase().includes(q)) return false;
     if(kat && t.kategori!==kat) return false;
     if(batch && t.batchId!==batch) return false;
+    if(dari && (!t.tanggal || t.tanggal < dari)) return false;
+    if(sampai && (!t.tanggal || t.tanggal > sampai)) return false;
     return true;
   }).sort((a,b)=> (b.tanggal||'').localeCompare(a.tanggal||''));
 }
@@ -1251,14 +1287,32 @@ function renderRekap(){
   batchSel.value = cur;
 
   const tx = currentFilteredTx();
-  document.getElementById('rekap-sub').textContent = `${fmtNum(tx.length)} transaksi ditemukan · ${fmtNum(STATE.transactions.length)} total`;
+  const dari = document.getElementById('f-tgl-dari').value;
+  const sampai = document.getElementById('f-tgl-sampai').value;
+  const periodeTxt = (dari||sampai) ? ` · periode ${dari||'awal'} s.d. ${sampai||'sekarang'}` : '';
+  document.getElementById('rekap-sub').textContent = `${fmtNum(tx.length)} transaksi ditemukan · ${fmtNum(STATE.transactions.length)} total${periodeTxt}`;
+
+  // Total penjumlahan mengikuti SEMUA filter di atas (pencarian, kategori, dokumen, rentang
+  // tanggal) — dihitung dari seluruh transaksi yang cocok, bukan hanya yang tampil di halaman ini.
+  const sums = { Pendapatan:0, OPEX:0, CAPEX:0, Pengeluaran:0 };
+  tx.forEach(t=> sums[t.kategori] = (sums[t.kategori]||0) + Math.abs(t.amount) );
+  const bersih = sums.Pendapatan - sums.OPEX - sums.CAPEX - sums.Pengeluaran;
+  document.getElementById('rekap-total-pendapatan').textContent = fmtRp(sums.Pendapatan);
+  document.getElementById('rekap-total-opex').textContent = fmtRp(sums.OPEX);
+  document.getElementById('rekap-total-capex').textContent = fmtRp(sums.CAPEX);
+  document.getElementById('rekap-total-pengeluaran').textContent = fmtRp(sums.Pengeluaran);
+  const bersihEl = document.getElementById('rekap-total-bersih');
+  bersihEl.textContent = fmtRp(bersih);
+  bersihEl.style.color = bersih>=0 ? 'var(--green)' : 'var(--red)';
 
   if(STATE.transactions.length===0){
     document.getElementById('rekap-empty').style.display='block';
     document.getElementById('rekap-tablewrap').style.display='none';
     document.getElementById('rekap-pagination').style.display='none';
+    document.getElementById('rekap-totals').style.display='none';
     return;
   }
+  document.getElementById('rekap-totals').style.display='grid';
   document.getElementById('rekap-empty').style.display='none';
   document.getElementById('rekap-tablewrap').style.display='block';
   document.getElementById('rekap-pagination').style.display='flex';
@@ -1314,8 +1368,14 @@ async function setCategoryManual(id, cat){
     showToast('Gagal menyimpan ke server: ' + err.message);
   }
 }
-['f-search','f-kategori','f-batch'].forEach(id=>{
+['f-search','f-kategori','f-batch','f-tgl-dari','f-tgl-sampai'].forEach(id=>{
   document.getElementById(id).addEventListener('input', ()=>{ rekapPage=0; renderRekap(); });
+});
+document.getElementById('btn-rekap-reset-tgl').addEventListener('click', ()=>{
+  document.getElementById('f-tgl-dari').value = '';
+  document.getElementById('f-tgl-sampai').value = '';
+  rekapPage = 0;
+  renderRekap();
 });
 
 /* ============================= RIWAYAT ============================= */
@@ -2057,7 +2117,51 @@ function exportRekap(){
   showToast('File rekap sedang diunduh...');
 }
 document.getElementById('btn-export-dash').addEventListener('click', exportRekap);
-document.getElementById('btn-export-rekap').addEventListener('click', exportRekap);
+
+/** Versi unduh khusus menu Rekap Transaksi — mengikuti filter pencarian/kategori/dokumen/rentang
+ *  tanggal yang sedang aktif di tampilan, bukan seluruh data (beda dengan exportRekap() di atas
+ *  yang dipakai tombol unduh di Dashboard dan selalu mengambil semua transaksi). */
+function exportRekapFiltered(){
+  const tx = currentFilteredTx();
+  if(tx.length===0){ showToast('Tidak ada transaksi pada filter/rentang tanggal ini.'); return; }
+
+  const sums = { Pendapatan:0, OPEX:0, CAPEX:0, Pengeluaran:0 };
+  tx.forEach(t=> sums[t.kategori]=(sums[t.kategori]||0)+Math.abs(t.amount) );
+  const totalAbs = Object.values(sums).reduce((a,b)=>a+b,0) || 1;
+  const bersih = sums.Pendapatan - sums.OPEX - sums.CAPEX - sums.Pengeluaran;
+  const dari = document.getElementById('f-tgl-dari').value;
+  const sampai = document.getElementById('f-tgl-sampai').value;
+  const periodeLabel = (dari||sampai) ? `${dari||'awal'} s.d. ${sampai||'sekarang'}` : 'Semua periode';
+
+  const summaryRows = [
+    ['RSU ALLAM MEDICA — REKAP TRANSAKSI (SIAK-RS)'],
+    ['Periode', periodeLabel],
+    ['Diunduh pada', new Date().toLocaleString('id-ID')],
+    [],
+    ['Kategori','Total (Rp)','Porsi (%)'],
+    ['Pendapatan', sums.Pendapatan, ((sums.Pendapatan/totalAbs)*100).toFixed(1)+'%'],
+    ['OPEX', sums.OPEX, ((sums.OPEX/totalAbs)*100).toFixed(1)+'%'],
+    ['CAPEX', sums.CAPEX, ((sums.CAPEX/totalAbs)*100).toFixed(1)+'%'],
+    ['Pengeluaran Lain', sums.Pengeluaran, ((sums.Pengeluaran/totalAbs)*100).toFixed(1)+'%'],
+    ['SELISIH BERSIH (Pendapatan − OPEX − CAPEX − Pengeluaran)', bersih, ''],
+  ];
+  const batchMap = {}; STATE.batches.forEach(b=>batchMap[b.id]=b.name);
+  const detailRows = [['Tanggal','Keterangan','Dokumen Sumber','Kode Akun','Nominal','Kategori','Sumber Klasifikasi']]
+    .concat(tx.slice().sort((a,b)=>(a.tanggal||'').localeCompare(b.tanggal||'')).map(t=>[
+      t.tanggal||'', t.keterangan, batchMap[t.batchId]||'', t.kodeAkun||'', t.amount, t.kategori, t.sumberKategori||''
+    ]));
+
+  const wb = XLSX.utils.book_new();
+  const ws1 = XLSX.utils.aoa_to_sheet(summaryRows);
+  ws1['!cols'] = [{wch:40},{wch:18},{wch:12}];
+  const ws2 = XLSX.utils.aoa_to_sheet(detailRows);
+  ws2['!cols'] = [{wch:12},{wch:40},{wch:22},{wch:12},{wch:16},{wch:14},{wch:16}];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Ringkasan');
+  XLSX.utils.book_append_sheet(wb, ws2, 'Rekap Transaksi');
+  XLSX.writeFile(wb, `Rekap_Transaksi_SIAK-RS_${new Date().toISOString().slice(0,10)}.xlsx`);
+  showToast('File rekap sedang diunduh...');
+}
+document.getElementById('btn-export-rekap').addEventListener('click', exportRekapFiltered);
 
 /* ============================= AI CALL (via Google Apps Script) =============================
    Panggilan langsung ke api.anthropic.com dari browser akan diblokir (perlu API key rahasia +
