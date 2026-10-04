@@ -647,6 +647,36 @@
       </div>
 
       <div class="card">
+        <div class="filters">
+          <label style="font-size:11.5px;color:var(--muted);">Dari</label>
+          <input type="date" class="textinput" id="pl-tgl-dari">
+          <label style="font-size:11.5px;color:var(--muted);">Sampai</label>
+          <input type="date" class="textinput" id="pl-tgl-sampai">
+          <button class="btn ghost" id="btn-pl-reset-tgl" type="button" style="font-size:12px;padding:8px 14px;">Reset Tanggal</button>
+        </div>
+
+        <div id="pengeluaran-edit-banner" class="card" style="display:none;margin:4px 0 16px;background:#FFF7ED;border:1px solid #F0D898;">
+          <div class="card-title" style="margin-bottom:10px;">✏️ Edit Transaksi Pengeluaran Lain-lain</div>
+          <div class="mapgrid">
+            <div>
+              <label style="font-weight:400;font-size:11.5px;">Tanggal</label>
+              <input type="date" class="textinput" id="pl-edit-tanggal">
+            </div>
+            <div>
+              <label style="font-weight:400;font-size:11.5px;">Keterangan</label>
+              <input type="text" class="textinput" id="pl-edit-keterangan">
+            </div>
+            <div>
+              <label style="font-weight:400;font-size:11.5px;">Nominal (Rp)</label>
+              <input type="number" min="0" class="textinput" id="pl-edit-nominal">
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:12px;">
+            <button class="btn" id="btn-pl-edit-simpan">💾 Simpan Perubahan</button>
+            <button class="btn ghost" id="btn-pl-edit-batal" type="button">Batal</button>
+          </div>
+        </div>
+
         <div id="pengeluaran-empty" class="empty" style="display:none;">
           <h3>Belum ada transaksi Pengeluaran Lain-lain</h3>
           <p>Transaksi berkategori Pengeluaran akan muncul di sini secara otomatis setelah diunggah/diklasifikasikan.</p>
@@ -660,7 +690,7 @@
           <div class="tablewrap">
             <table>
               <thead>
-                <tr><th>Tanggal</th><th>Keterangan</th><th>Dokumen</th><th style="text-align:right;">Nominal</th></tr>
+                <tr><th>Tanggal</th><th>Keterangan</th><th>Dokumen</th><th style="text-align:right;">Nominal</th><th></th></tr>
               </thead>
               <tbody id="pengeluaran-detail-tbody"></tbody>
             </table>
@@ -1443,8 +1473,13 @@ async function deleteBatch(id){
 }
 
 /* ============================= RINCIAN PER KATEGORI (OPEX / CAPEX) ============================= */
-function buildCategoryPivot(kategori){
-  const tx = STATE.transactions.filter(t=>t.kategori===kategori);
+function buildCategoryPivot(kategori, dari, sampai){
+  const tx = STATE.transactions.filter(t=>{
+    if(t.kategori!==kategori) return false;
+    if(dari && (!t.tanggal || t.tanggal < dari)) return false;
+    if(sampai && (!t.tanggal || t.tanggal > sampai)) return false;
+    return true;
+  });
   const byItemMonth = {}; // { keterangan: { "2026-01": total, ... } }
   const monthsSet = new Set();
   tx.forEach(t=>{
@@ -1545,16 +1580,104 @@ function exportCategoryDetail(kategori, label){
   XLSX.utils.book_append_sheet(wb, ws, `Rincian ${label}`);
   XLSX.writeFile(wb, `Rincian_${label}_SIAK-RS_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
+let editingPengeluaranId = null;
+
 function renderPengeluaranDetail(){
-  const pivot = buildCategoryPivot('Pengeluaran');
-  document.getElementById('pengeluaran-sub').textContent = `${pivot.tx.length} transaksi Pengeluaran Lain-lain`;
+  const dari = document.getElementById('pl-tgl-dari').value;
+  const sampai = document.getElementById('pl-tgl-sampai').value;
+  const pivot = buildCategoryPivot('Pengeluaran', dari, sampai);
+  const periodeTxt = (dari||sampai) ? ` · periode ${dari||'awal'} s.d. ${sampai||'sekarang'}` : '';
+  document.getElementById('pengeluaran-sub').textContent = `${pivot.tx.length} transaksi Pengeluaran Lain-lain${periodeTxt}`;
   const empty = document.getElementById('pengeluaran-empty');
   const content = document.getElementById('pengeluaran-content');
   if(pivot.tx.length===0){ empty.style.display='block'; content.style.display='none'; return; }
   empty.style.display='none'; content.style.display='block';
   renderCategoryPivotTable('pengeluaran-pivot-table', 'PENGELUARAN LAIN-LAIN', pivot);
-  renderCategoryDetailList('pengeluaran-detail-tbody', pivot.tx);
+  renderPengeluaranDetailList(pivot.tx);
 }
+
+function renderPengeluaranDetailList(tx){
+  const batchMap = {}; STATE.batches.forEach(b=>batchMap[b.id]=b.name);
+  const sorted = tx.slice().sort((a,b)=> (b.tanggal||'').localeCompare(a.tanggal||''));
+  document.getElementById('pengeluaran-detail-tbody').innerHTML = sorted.map(t=>`
+    <tr>
+      <td>${escapeHtml(t.tanggal||'-')}</td>
+      <td>${escapeHtml(t.keterangan)}</td>
+      <td style="color:var(--muted);font-size:11.5px;">${escapeHtml(batchMap[t.batchId]||'—')}</td>
+      <td style="text-align:right;" class="mono">${fmtRp(Math.abs(t.amount))}</td>
+      <td style="display:flex;gap:6px;white-space:nowrap;">
+        <button class="btn ghost" style="padding:4px 10px;font-size:11px;" onclick="startEditPengeluaran('${t.id}')">✏️</button>
+        <button class="btn ghost" style="padding:4px 10px;font-size:11px;" onclick="deletePengeluaranEntry('${t.id}')">🗑</button>
+      </td>
+    </tr>`).join('');
+}
+
+function startEditPengeluaran(id){
+  const t = STATE.transactions.find(x=>String(x.id)===String(id));
+  if(!t) return;
+  editingPengeluaranId = id;
+  document.getElementById('pl-edit-tanggal').value = t.tanggal || '';
+  document.getElementById('pl-edit-keterangan').value = t.keterangan || '';
+  document.getElementById('pl-edit-nominal').value = Math.abs(t.amount);
+  const banner = document.getElementById('pengeluaran-edit-banner');
+  banner.style.display = 'block';
+  banner.scrollIntoView({ behavior:'smooth', block:'center' });
+}
+
+function batalEditPengeluaran(){
+  editingPengeluaranId = null;
+  document.getElementById('pengeluaran-edit-banner').style.display = 'none';
+}
+
+document.getElementById('btn-pl-edit-batal').addEventListener('click', batalEditPengeluaran);
+
+document.getElementById('btn-pl-edit-simpan').addEventListener('click', async ()=>{
+  if(!editingPengeluaranId) return;
+  const btn = document.getElementById('btn-pl-edit-simpan');
+  const tanggal = document.getElementById('pl-edit-tanggal').value;
+  const keterangan = document.getElementById('pl-edit-keterangan').value.trim();
+  const nominal = Number(document.getElementById('pl-edit-nominal').value || 0);
+  if(!tanggal){ showToast('Tanggal wajib diisi.'); return; }
+  if(!keterangan){ showToast('Keterangan wajib diisi.'); return; }
+  if(!nominal || nominal<=0){ showToast('Nominal wajib diisi dan lebih dari 0.'); return; }
+  btn.disabled = true;
+  try{
+    const id = editingPengeluaranId;
+    const res = await callGAS('updateTransaksiLain', { pin: APP_PIN, id, tanggal, keterangan, nominal });
+    const idx = STATE.transactions.findIndex(t=>String(t.id)===String(id));
+    if(idx>=0){
+      STATE.transactions[idx] = { ...STATE.transactions[idx], tanggal: res.tanggal, keterangan: res.keterangan, amount: -res.nominal };
+    }
+    showToast('Transaksi Pengeluaran Lain-lain diperbarui.');
+    batalEditPengeluaran();
+    renderPengeluaranDetail();
+  }catch(err){
+    showToast('Gagal menyimpan: ' + err.message);
+  }
+  btn.disabled = false;
+});
+
+async function deletePengeluaranEntry(id){
+  if(!confirm('Hapus transaksi Pengeluaran Lain-lain ini?')) return;
+  try{
+    await callGAS('deleteTransaksiLain', { pin: APP_PIN, id });
+    STATE.transactions = STATE.transactions.filter(t=>String(t.id)!==String(id));
+    if(String(editingPengeluaranId)===String(id)) batalEditPengeluaran();
+    showToast('Transaksi dihapus.');
+    renderPengeluaranDetail();
+  }catch(err){
+    showToast('Gagal menghapus: ' + err.message);
+  }
+}
+
+['pl-tgl-dari','pl-tgl-sampai'].forEach(id=>{
+  document.getElementById(id).addEventListener('change', renderPengeluaranDetail);
+});
+document.getElementById('btn-pl-reset-tgl').addEventListener('click', ()=>{
+  document.getElementById('pl-tgl-dari').value = '';
+  document.getElementById('pl-tgl-sampai').value = '';
+  renderPengeluaranDetail();
+});
 
 document.getElementById('btn-export-capex').addEventListener('click', ()=>exportCategoryDetail('CAPEX','CAPEX'));
 document.getElementById('btn-export-opex').addEventListener('click', ()=>exportCategoryDetail('OPEX','OPEX'));
