@@ -262,6 +262,16 @@
         Laporan ini satu-satunya sumber yang konsisten dengan menu Rincian OPEX, Rincian CAPEX, Pengeluaran Lain-lain, dan Neraca — semuanya dihitung dari data transaksi yang sama, jadi otomatis selalu sinkron (tidak perlu rekap ulang manual). Klik baris Total Biaya Usaha/CAPEX/Pengeluaran Lain-lain untuk buka rinciannya di menu masing-masing.
       </div>
 
+      <div class="card" style="margin-bottom:14px;">
+        <div class="filters">
+          <label style="font-size:11.5px;color:var(--muted);">Dari Bulan</label>
+          <input type="month" class="textinput" id="lr-bulan-dari">
+          <label style="font-size:11.5px;color:var(--muted);">Sampai Bulan</label>
+          <input type="month" class="textinput" id="lr-bulan-sampai">
+          <button class="btn ghost" id="btn-lr-reset-bulan" type="button" style="font-size:12px;padding:8px 14px;">Semua Periode</button>
+        </div>
+      </div>
+
       <div id="labarugi-empty" class="card empty" style="display:none;">
         <h3>Belum ada data untuk disusun jadi Laba Rugi</h3>
         <p>Unggah dokumen transaksi terlebih dahulu di menu Unggah Dokumen.</p>
@@ -1760,8 +1770,17 @@ document.getElementById('btn-export-pengeluaran').addEventListener('click', ()=>
    Pengeluaran Lain-lain - semuanya ditarik langsung dari STATE.transactions yang sama dipakai
    Rincian OPEX/CAPEX/Pengeluaran & Neraca, supaya bagian keuangan selalu lihat angka yang
    konsisten di semua menu tanpa rekap manual terpisah. */
-function buildLabaRugi(){
-  const tx = STATE.transactions;
+function buildLabaRugi(bulanDari, bulanSampai){
+  // bulanDari/bulanSampai: "YYYY-MM" (dari <input type="month">). Perbandingan string biasa sudah
+  // tepat secara kronologis untuk format ini. Transaksi tanpa tanggal valid selalu ikut ditampilkan
+  // di kolom "Tanpa Tanggal" terlepas dari filter periode, karena tidak punya bulan untuk disaring.
+  const tx = STATE.transactions.filter(t=>{
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(t.tanggal)) return true;
+    const m = t.tanggal.slice(0,7);
+    if(bulanDari && m < bulanDari) return false;
+    if(bulanSampai && m > bulanSampai) return false;
+    return true;
+  });
   const monthsSet = new Set();
   tx.forEach(t=>{ if(/^\d{4}-\d{2}-\d{2}$/.test(t.tanggal)) monthsSet.add(t.tanggal.slice(0,7)); });
   const months = Array.from(monthsSet).sort();
@@ -1810,12 +1829,28 @@ function computeLabaRugiRows(colKeys, data){
 function renderLabaRugi(){
   const empty = document.getElementById('labarugi-empty');
   const content = document.getElementById('labarugi-content');
-  if(STATE.transactions.length===0){ empty.style.display='block'; content.style.display='none'; return; }
-  empty.style.display='none'; content.style.display='block';
+  if(STATE.transactions.length===0){
+    empty.style.display='block'; content.style.display='none';
+    empty.querySelector('h3').textContent = 'Belum ada data untuk disusun jadi Laba Rugi';
+    empty.querySelector('p').textContent = 'Unggah dokumen transaksi terlebih dahulu di menu Unggah Dokumen.';
+    return;
+  }
 
-  const { colKeys, data } = buildLabaRugi();
+  const bulanDari = document.getElementById('lr-bulan-dari').value;
+  const bulanSampai = document.getElementById('lr-bulan-sampai').value;
+  const { colKeys, data } = buildLabaRugi(bulanDari, bulanSampai);
+  if(colKeys.length===0){
+    empty.style.display='block'; content.style.display='none';
+    empty.querySelector('h3').textContent = 'Tidak ada transaksi pada periode ini';
+    empty.querySelector('p').textContent = 'Coba perluas rentang bulan atau klik "Semua Periode".';
+    return;
+  }
+  empty.style.display='none'; content.style.display='block';
   const monthLabel = m => m==='Tanpa Tanggal' ? m : new Date(m+'-01').toLocaleDateString('id-ID',{month:'short',year:'numeric'});
   const r = computeLabaRugiRows(colKeys, data);
+
+  const periodeTxt = (bulanDari||bulanSampai) ? ` · periode ${bulanDari||'awal'} s.d. ${bulanSampai||'sekarang'}` : '';
+  document.getElementById('labarugi-sub').textContent = `Rekap operasional terintegrasi — ditarik otomatis dari seluruh transaksi yang sudah diklasifikasikan (Pendapatan, OPEX, CAPEX, Pengeluaran Lain-lain)${periodeTxt}`;
 
   function tr(label, rowData, opts={}){
     const cells = colKeys.map((k,i)=>`<td style="text-align:right;${opts.muted?'color:var(--muted);':''}">${fmtRp(rowData.vals[i])}</td>`).join('');
@@ -1851,13 +1886,18 @@ function renderLabaRugi(){
 
 function exportLabaRugi(){
   if(STATE.transactions.length===0){ showToast('Belum ada data untuk diunduh.'); return; }
-  const { colKeys, data } = buildLabaRugi();
+  const bulanDari = document.getElementById('lr-bulan-dari').value;
+  const bulanSampai = document.getElementById('lr-bulan-sampai').value;
+  const { colKeys, data } = buildLabaRugi(bulanDari, bulanSampai);
+  if(colKeys.length===0){ showToast('Tidak ada transaksi pada periode ini untuk diunduh.'); return; }
   const monthLabel = m => m==='Tanpa Tanggal' ? m : new Date(m+'-01').toLocaleDateString('id-ID',{month:'long',year:'numeric'});
   const r = computeLabaRugiRows(colKeys, data);
+  const periodeTxt = (bulanDari||bulanSampai) ? `${bulanDari||'awal'} s.d. ${bulanSampai||'sekarang'}` : 'Seluruh periode';
   const header = ['Keterangan', ...colKeys.map(monthLabel), 'Total'];
   const rows = [
     ['RSU ALLAM MEDICA - LAPORAN LABA RUGI (TERINTEGRASI SIAK-RS)'],
     ['Diunduh pada', new Date().toLocaleString('id-ID')],
+    ['Periode', periodeTxt],
     [],
     header,
     ['Pendapatan', ...r.pendapatan.vals, r.pendapatan.total],
@@ -1879,6 +1919,14 @@ function exportLabaRugi(){
   XLSX.writeFile(wb, `Laporan_Laba_Rugi_SIAK-RS_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 document.getElementById('btn-export-labarugi').addEventListener('click', exportLabaRugi);
+['lr-bulan-dari','lr-bulan-sampai'].forEach(id=>{
+  document.getElementById(id).addEventListener('change', renderLabaRugi);
+});
+document.getElementById('btn-lr-reset-bulan').addEventListener('click', ()=>{
+  document.getElementById('lr-bulan-dari').value = '';
+  document.getElementById('lr-bulan-sampai').value = '';
+  renderLabaRugi();
+});
 
 /* ============================= OPERASIONAL HARIAN (KAS HARIAN) =============================
    Pencatatan cepat pendapatan/pengeluaran operasional sehari-hari tanpa menunggu unggah file
