@@ -142,6 +142,19 @@
       <div class="net-sub" id="net-sub">—</div>
     </div>
 
+    <div class="section-title">Posisi Kas &amp; Bank</div>
+    <div class="grid kpis">
+      <div class="card"><div class="kpi-label">KAS (OPERASIONAL)</div><div class="kpi-val mono" id="kas-kas">Rp 0</div></div>
+      <div class="card"><div class="kpi-label">BANK</div><div class="kpi-val mono" id="kas-bank">Rp 0</div></div>
+      <div class="card"><div class="kpi-label">KAS BESAR</div><div class="kpi-val mono" id="kas-besar">Rp 0</div></div>
+      <div class="card"><div class="kpi-label">TOTAL KAS &amp; BANK</div><div class="kpi-val mono" id="kas-total">Rp 0</div>
+        <div class="kpi-sub" id="kas-sub">—</div></div>
+      <div class="card"><div class="kpi-label">PIUTANG USAHA</div><div class="kpi-val mono" id="kas-piutang">Rp 0</div>
+        <div class="kpi-sub">Pendapatan belum diterima</div></div>
+      <div class="card"><div class="kpi-label">UTANG USAHA</div><div class="kpi-val mono" id="kas-utang">Rp 0</div>
+        <div class="kpi-sub">Pengeluaran belum dibayar</div></div>
+    </div>
+
     <div class="section-title">Komposisi &amp; Tren</div>
     <div class="row2">
       <div class="card">
@@ -211,10 +224,48 @@ async function loadData(){
   let stateData = { batches:[], transactions:[] }, analysisText = null;
   try{ stateData = await callGAS('getData', { pin: APP_PIN }); }catch(e){ console.error(e); }
   try{ const a = await callGAS('getAnalysis', { pin: APP_PIN }); if(a && a.text) analysisText = a.text; }catch(e){ console.error(e); }
-  render(JSON.stringify(stateData), analysisText);
+  // Saldo awal & mutasi kas: tambahan, bila gagal dimuat panel kas tetap tampil dari transaksi saja.
+  let neracaAwal = { items:[] }, mutasi = [];
+  try{ neracaAwal = await callGAS('getNeracaAwal', { pin: APP_PIN }) || neracaAwal; }catch(e){ console.error(e); }
+  try{ const m = await callGAS('getMutasiKas', { pin: APP_PIN }); mutasi = (m && m.mutasi) || []; }catch(e){ console.error(e); }
+  let aset = [], mulai = '', modeCapex = '';
+  try{ const s = await callGAS('getAsetTetap', { pin: APP_PIN }); aset = (s && s.aset) || []; mulai = (s && s.mulai) || ''; modeCapex = (s && s.modeCapex) || ''; }catch(e){ console.error(e); }
+  render(JSON.stringify(stateData), analysisText, { neracaAwal, mutasi, aset, mulai, modeCapex });
 }
 
-function render(stateRaw, analysis){
+/* Posisi Kas, Bank, Kas Besar = saldo awal + transaksi + mutasi (sama dengan Buku Besar di Mode Operasional). */
+function renderPosisiKas(tx, extra){
+  const items = (extra.neracaAwal && extra.neracaAwal.items) || [];
+  const find = pos => { const it = items.find(i=>i.pos===pos); return it ? Number(it.saldo)||0 : 0; };
+  // net = Debit − Kredit per akun (Kas/Bank/Kas Besar/Piutang bersaldo Debit; Utang bersaldo Kredit)
+  const net = { 'Kas': find('Saldo Awal Kas'), 'Bank': find('Saldo Awal Bank'), 'Kas Besar': find('Saldo Awal Kas Besar'),
+                'Piutang Usaha': find('Piutang Usaha'), 'Utang Usaha': -find('Kewajiban Jangka Pendek') };
+  const lain = find('Kas & Bank');
+  const norm = v => { const x = String(v||'').trim().toLowerCase();
+    return x==='bank' ? 'Bank' : (x==='kas besar' ? 'Kas Besar' : (x==='piutang usaha'||x==='piutang' ? 'Piutang Usaha' : (x==='utang usaha'||x==='utang'||x==='hutang usaha' ? 'Utang Usaha' : 'Kas'))); };
+  let n = 0, totD = 0, totK = 0;
+  tx.forEach(t=>{
+    if(['Pendapatan','OPEX','CAPEX','Pengeluaran'].indexOf(t.kategori) < 0) return;
+    const v = Math.abs(t.amount), a = norm(t.akunKas);
+    net[a] += (t.kategori==='Pendapatan') ? v : -v;
+    n++; totD += v; totK += v;
+  });
+  (extra.mutasi||[]).forEach(m=>{
+    if(net[m.dari]===undefined || net[m.ke]===undefined || m.dari===m.ke) return;
+    const v = Math.abs(m.amount);
+    net[m.dari] -= v; net[m.ke] += v;
+    n++; totD += v; totK += v;
+  });
+  const set = (id, v) => { const el = document.getElementById(id); el.textContent = fmtRp(v); el.style.color = v<0 ? 'var(--red)' : ''; };
+  set('kas-kas', net['Kas']); set('kas-bank', net['Bank']); set('kas-besar', net['Kas Besar']);
+  set('kas-total', net['Kas'] + net['Bank'] + net['Kas Besar'] + lain);
+  set('kas-piutang', net['Piutang Usaha']); set('kas-utang', -net['Utang Usaha']);
+  const awalIsi = find('Saldo Awal Kas') || find('Saldo Awal Bank') || find('Saldo Awal Kas Besar') || lain;
+  document.getElementById('kas-sub').textContent = `${fmtNum(n)} jurnal otomatis · ` + (Math.round(totD-totK)===0 ? 'Seimbang ✓' : 'Tidak seimbang')
+    + (awalIsi ? '' : ' · saldo awal belum diisi');
+}
+
+function render(stateRaw, analysis, extra){
   let state = { batches:[], transactions:[] };
   if(stateRaw){ try{ state = JSON.parse(stateRaw); }catch(e){} }
   const tx = state.transactions || [];
@@ -289,7 +340,8 @@ function render(stateRaw, analysis){
     });
   }
 
-  renderLabaRugiTable(tx);
+  renderLabaRugiTable(tx, extra);
+  renderPosisiKas(tx, extra || {});
 
   if(analysis){
     document.getElementById('narrative-box').innerHTML = simpleMarkdown(analysis);
@@ -298,15 +350,44 @@ function render(stateRaw, analysis){
 
 /* Laporan Laba Rugi — mengikuti struktur yang sama dengan Mode Operasional (index.html),
    dihitung dari transaksi yang sama supaya kedua mode selalu menampilkan angka yang konsisten. */
-function renderLabaRugiTable(tx){
+/* Penyusutan fiskal (PMK 72/2023) — sama dengan mesin di mode operasional. */
+const KP = {'1':{t:4,gl:.25,sm:.5},'2':{t:8,gl:.125,sm:.25},'3':{t:16,gl:.0625,sm:.125},'4':{t:20,gl:.05,sm:.1},'BP':{t:20,gl:.05,sm:null},'BTP':{t:10,gl:.1,sm:null}};
+function ymAdd(ym,n){ let y=+ym.slice(0,4), m=+ym.slice(5,7)-1+n; y+=Math.floor(m/12); m=((m%12)+12)%12; return y+'-'+String(m+1).padStart(2,'0'); }
+function ymNow(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function jadwalAset(a){
+  const k=KP[a.kelompok]; if(!k||!(a.harga>0)) return [];
+  const mulai=String(a.tanggalMulai||a.tanggalPerolehan||'').slice(0,7); if(!/^\d{4}-\d{2}$/.test(mulai)) return [];
+  const sm=a.metode==='SM'&&k.sm, rate=sm?k.sm:k.gl, total=k.t*12;
+  const lepas=(a.status==='Dilepas'&&a.tanggalLepas)?String(a.tanggalLepas).slice(0,7):null;
+  const out=[]; let nbv=a.harga, ys=a.harga;
+  for(let i=0;i<total;i++){ const ym=ymAdd(mulai,i); if(lepas&&ym>lepas) break;
+    if(i===0||ym.slice(5,7)==='01') ys=nbv;
+    let dep=(i===total-1)?nbv:(sm?ys*rate/12:a.harga*rate/12); if(dep>nbv) dep=nbv; nbv-=dep; out.push({ym,dep}); }
+  return out;
+}
+function susutMap(extra, tx){
+  const aset=extra.aset||[]; let mulai=extra.mulai||'';
+  if(!mulai){ const ta=extra.neracaAwal&&extra.neracaAwal.tanggalAwal;
+    if(ta&&/^\d{4}-\d{2}/.test(ta)) mulai=ta.slice(0,7);
+    else { const ds=tx.map(t=>t.tanggal).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort(); mulai=ds.length?ds[0].slice(0,7):ymNow(); } }
+  const now=ymNow(), map={};
+  aset.forEach(a=>jadwalAset(a).forEach(r=>{ if(r.ym<mulai||r.ym>now||!(r.dep>0)) return; map[r.ym]=(map[r.ym]||0)+r.dep; }));
+  return map;
+}
+function renderLabaRugiTable(tx, extra){
+  extra = extra || {};
+  const sy = susutMap(extra, tx);
+  const akrual = extra.modeCapex==='akrual' || (extra.modeCapex!=='kas' && (extra.aset||[]).some(a=>a.capexId));
+  const terdaftar = new Set((extra.aset||[]).filter(a=>a.capexId).map(a=>a.capexId));
   const monthsSet = new Set();
   tx.forEach(t=>{ if(/^\d{4}-\d{2}-\d{2}$/.test(t.tanggal)) monthsSet.add(t.tanggal.slice(0,7)); });
+  Object.keys(sy).forEach(m=>monthsSet.add(m));
   const colKeys = Array.from(monthsSet).sort();
   if(colKeys.length===0){
     document.getElementById('labarugi-table').innerHTML = '<tr><td style="padding:10px;color:var(--muted);">Data tanggal tidak tersedia.</td></tr>';
     return;
   }
-  const emptyBucket = () => ({ pendapatan:0, biayaUsaha:0, biayaPenyusutan:0, pph25:0, capex:0, pengeluaran:0 });
+  const emptyBucket = () => ({ pendapatan:0, biayaUsaha:0, biayaPenyusutan:0, pph25:0, capex:0, capexTerdaftar:0, pengeluaran:0 });
   const data = {}; colKeys.forEach(m=> data[m]=emptyBucket());
   tx.forEach(t=>{
     if(!/^\d{4}-\d{2}-\d{2}$/.test(t.tanggal)) return;
@@ -319,10 +400,11 @@ function renderLabaRugiTable(tx){
       else if(ket==='pph 25') bucket.pph25 += v;
       else bucket.biayaUsaha += v;
     }
-    else if(t.kategori==='CAPEX') bucket.capex += v;
+    else if(t.kategori==='CAPEX'){ if(akrual && terdaftar.has(t.id)) bucket.capexTerdaftar += v; else bucket.capex += v; }
     else if(t.kategori==='Pengeluaran') bucket.pengeluaran += v;
   });
 
+  Object.keys(sy).forEach(m=>{ if(data[m]) data[m].biayaPenyusutan += Math.round(sy[m]); });
   const rowVals = fn => { const vals = colKeys.map(k=>fn(data[k])); return { vals, total: vals.reduce((a,b)=>a+b,0) }; };
   const pendapatan = rowVals(d=>d.pendapatan);
   const biayaUsaha = rowVals(d=>d.biayaUsaha);
@@ -332,6 +414,7 @@ function renderLabaRugiTable(tx){
   const pph25 = rowVals(d=>d.pph25);
   const grossProfit = { vals: colKeys.map((k,i)=>ebit.vals[i]-pph25.vals[i]), total: ebit.total-pph25.total };
   const capex = rowVals(d=>d.capex);
+  const capexTerdaftar = rowVals(d=>d.capexTerdaftar);
   const netIncome = { vals: colKeys.map((k,i)=>grossProfit.vals[i]-capex.vals[i]), total: grossProfit.total-capex.total };
   const pengeluaran = rowVals(d=>d.pengeluaran);
   const labaBersih = { vals: colKeys.map((k,i)=>netIncome.vals[i]-pengeluaran.vals[i]), total: netIncome.total-pengeluaran.total };
@@ -351,6 +434,7 @@ function renderLabaRugiTable(tx){
   html += tr('PPh 25', pph25, {muted:true});
   html += tr('Gross Profit', grossProfit, {bold:true});
   html += tr('Investment Cost (CAPEX)', capex);
+  if(capexTerdaftar.total) html += tr('Memo: CAPEX terdaftar sebagai aset (lewat penyusutan)', capexTerdaftar, {muted:true});
   html += tr('Net Income', netIncome, {bold:true});
   html += tr('Pengeluaran Lain-lain', pengeluaran);
   html += tr('LABA (RUGI) BERSIH', labaBersih, {bold:true});
