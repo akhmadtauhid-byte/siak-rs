@@ -50,11 +50,12 @@
   .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px 20px;}
   .card-title{font-size:13.5px;font-weight:600;color:var(--text);margin:0 0 4px;}
   .grid{display:grid;gap:14px;}
-  .kpis{grid-template-columns:repeat(4,1fr);}
-  @media (max-width:1000px){.kpis{grid-template-columns:repeat(2,1fr);}}
-  .kpi{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 18px;}
+  /* Kotak KPI: kolom otomatis (minimal 230px) supaya angka rupiah panjang tidak terpotong —
+     kalau layar sempit, kotak turun ke baris berikutnya, bukan ikut menyempit. */
+  .kpis{grid-template-columns:repeat(auto-fit,minmax(230px,1fr));}
+  .kpi{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 18px;min-width:0;}
   .kpi-label{font-size:11.5px;color:var(--muted);font-weight:600;letter-spacing:.3px;}
-  .kpi-val{font-family:'IBM Plex Mono',monospace;font-size:21px;font-weight:600;margin-top:6px;}
+  .kpi-val{font-family:'IBM Plex Mono',monospace;font-size:clamp(16px,1.6vw,21px);font-weight:600;margin-top:6px;overflow-wrap:anywhere;}
   .kpi-sub{font-size:11px;color:var(--muted);margin-top:4px;}
   .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;}
 
@@ -106,10 +107,12 @@
   .amt-out{color:var(--red);font-weight:600;}
 
   .filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:center;}
-  .rekap-totals{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px;}
-  @media (max-width:1000px){.rekap-totals{grid-template-columns:repeat(2,1fr);}}
-  .rekap-totals.harian-kpis{grid-template-columns:repeat(3,1fr);}
-  @media (max-width:1000px){.rekap-totals.harian-kpis{grid-template-columns:repeat(2,1fr);}}
+  .rekap-totals{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-bottom:16px;}
+  /* Tanggal dan nominal tidak boleh patah baris (mis. "2026-10-\n05") — tabel tetap bisa digeser mendatar. */
+  #rekap-tbody td:first-child,#harian-list-tbody td:first-child,#jr-umum-tbody td:first-child,#jr-besar-tbody td:first-child,
+  #pengeluaran-detail-tbody td:first-child,#opex-detail-tbody td:first-child,#capex-detail-tbody td:first-child{white-space:nowrap;}
+  td.mono{white-space:nowrap;}
+  .kpi-sel-pos{color:var(--green);} .kpi-sel-neg{color:var(--red);}
   .filters select,.filters input{width:auto;min-width:140px;}
   .filters .grow{flex:1;min-width:180px;}
 
@@ -288,7 +291,7 @@
           </div>
         </div>
 
-        <div class="grid kpis" style="grid-template-columns:repeat(3,1fr);margin-top:16px;">
+        <div class="grid kpis" style="margin-top:16px;">
           <div class="kpi">
             <div class="kpi-label">MARGIN LABA BERSIH (RATA-RATA PERIODE)</div>
             <div class="kpi-val mono" id="labarugi-margin">0%</div>
@@ -449,6 +452,11 @@
           <div class="kpi-val mono" id="harian-kpi-nonrs-bulan">Rp 0</div>
         </div>
         <div class="kpi">
+          <div class="kpi-label">SELISIH BERSIH BULAN INI</div>
+          <div class="kpi-val mono" id="harian-kpi-selisih-bulan">Rp 0</div>
+          <div class="kpi-sub" id="harian-kpi-selisih-bulan-sub">Pendapatan − semua pengeluaran</div>
+        </div>
+        <div class="kpi">
           <div class="kpi-label">PENDAPATAN HARI INI</div>
           <div class="kpi-val mono" id="harian-kpi-pendapatan-hari">Rp 0</div>
         </div>
@@ -459,6 +467,11 @@
         <div class="kpi">
           <div class="kpi-label">PENGELUARAN LAIN-LAIN / NON-RS HARI INI</div>
           <div class="kpi-val mono" id="harian-kpi-nonrs-hari">Rp 0</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">SELISIH BERSIH HARI INI</div>
+          <div class="kpi-val mono" id="harian-kpi-selisih-hari">Rp 0</div>
+          <div class="kpi-sub" id="harian-kpi-selisih-hari-sub">Pendapatan − semua pengeluaran</div>
         </div>
       </div>
 
@@ -2286,6 +2299,14 @@ async function renderOperasionalHarian(){
   document.getElementById('harian-kpi-pendapatan-bulan').textContent = fmtRp(pendapatanBulan);
   document.getElementById('harian-kpi-pengeluaran-bulan').textContent = fmtRp(pengeluaranBulan);
   document.getElementById('harian-kpi-nonrs-bulan').textContent = fmtRp(nonrsBulan);
+  // Selisih bersih = Pendapatan − (OPEX + Pengeluaran Lain-lain/Non-RS), definisi yang sama dengan
+  // "Selisih Bersih" di Rekap Transaksi dan Ringkasan.
+  [['hari', pendapatanHari - pengeluaranHari - nonrsHari], ['bulan', pendapatanBulan - pengeluaranBulan - nonrsBulan]].forEach(([k, v])=>{
+    const el = document.getElementById('harian-kpi-selisih-'+k);
+    el.textContent = fmtRp(v);
+    el.style.color = v>=0 ? 'var(--green)' : 'var(--red)';
+    document.getElementById('harian-kpi-selisih-'+k+'-sub').textContent = v===0 ? 'Impas' : (v>0 ? 'Surplus: pendapatan melebihi pengeluaran' : 'Defisit: pengeluaran melebihi pendapatan');
+  });
 
   const sorted = tx.slice().sort((a,b)=> (b.tanggal||'').localeCompare(a.tanggal||'') || String(b.id).localeCompare(String(a.id)));
   harianTxCache = sorted; // dipakai startEditKasHarian() saat tombol ✏️ diklik
