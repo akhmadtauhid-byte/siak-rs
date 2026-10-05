@@ -437,6 +437,14 @@
           <button class="btn ghost" id="btn-harian-kategori-baru" type="button">+ Kategori Baru</button>
           <button class="btn ghost" id="btn-harian-kategori-hapus" type="button">🗑 Hapus Kategori Terpilih</button>
         </div>
+        <details id="harian-akunmap-wrap" class="admin-only-block" style="margin-top:12px;border:1px solid var(--border);border-radius:9px;padding:10px 14px;">
+          <summary style="cursor:pointer;font-weight:600;font-size:13px;">🔗 Pemetaan Akun Kategori (samakan dengan akun Buku Besar / data unggahan)</summary>
+          <div style="font-size:12px;color:var(--muted);margin:8px 0;">Kategori yang namanya sama dengan akun di data unggahan otomatis memakai akun itu. Untuk yang belum sama, pilih akun yang sesuai atau isi kode manual — Rincian OPEX, Jurnal, dan Buku Besar akan ikut memakai akun yang sama.</div>
+          <div style="overflow-x:auto;"><table class="tbl" style="width:100%;">
+            <thead><tr><th>Jenis</th><th>Kategori</th><th>Akun (kode · nama)</th></tr></thead>
+            <tbody id="harian-akunmap-tbody"></tbody>
+          </table></div>
+        </details>
         <div class="note" style="margin-top:12px;">
           Pendapatan harian masuk sebagai <strong>Pendapatan</strong>; "Pengeluaran (Operasional RS)" masuk sebagai <strong>OPEX</strong> (biaya usaha rutin RS) dan ikut terhitung di Laporan Laba Rugi &amp; Rincian OPEX; "Pengeluaran Lain-lain / Non-RS" masuk ke kategori <strong>Pengeluaran</strong> terpisah (mis. keperluan pribadi yang lewat kas RS) — tidak ikut dihitung sebagai biaya operasional RS, konsisten dengan menu Pengeluaran Lain-lain.
         </div>
@@ -2142,9 +2150,14 @@ function populateKategoriHarianSelect(){
   const sel = document.getElementById('harian-kategori');
   const list = (STATE.kategoriHarian && STATE.kategoriHarian[harianJenisAktif]) || [];
   const prev = sel.value;
-  sel.innerHTML = list.map(k=>`<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
+  const katU = kategoriFromJenisHarian(harianJenisAktif);
+  sel.innerHTML = list.map(k=>{
+    const r = resolveAkunHarian({ kategori:katU, kategoriRinci:k });
+    return `<option value="${escapeHtml(k)}">${escapeHtml(k)}${r ? ' · '+escapeHtml(r.kode) : ''}</option>`;
+  }).join('');
   if(list.includes(prev)) sel.value = prev;
   updateJurnalPreview();
+  if(typeof renderAkunMap==='function') renderAkunMap();
 }
 
 /** Pratinjau jurnal Debit/Kredit yang akan terbentuk otomatis dari isian form saat ini. */
@@ -2441,9 +2454,41 @@ function akunKasBank(t){
   const x = String(t.akunKas||'').trim().toLowerCase();
   return x==='bank' ? AKUN_BANK : (x==='kas besar' ? AKUN_KASBESAR : AKUN_KAS);
 }
+/* Penyamaan akun Operasional Harian dengan akun data unggahan:
+   1) pemetaan manual (Super Admin) di panel "Pemetaan Akun Kategori" -> STATE.kategoriHarian._akun;
+   2) otomatis: nama kategori sama dengan nama akun pada data unggahan (kategori sama) -> pakai kode & nama akun itu;
+   3) selain itu: kode default per jenis. Hanya untuk entri tanpa kodeAkun (entri harian). */
+function jenisHarianDariKategori(k){ return k==='Pendapatan' ? 'Pendapatan' : (k==='Pengeluaran' ? 'NonRS' : 'Pengeluaran'); }
+function normNamaAkun(x){ return String(x||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
+let _akunUnggahCache = { ref:null, n:-1, map:{}, list:[] };
+function akunUnggahan(){
+  const tx = STATE.transactions||[];
+  if(_akunUnggahCache.ref===tx && _akunUnggahCache.n===tx.length) return _akunUnggahCache;
+  const map = {}, seen = {}, list = [];
+  tx.forEach(t=>{
+    const kode = String(t.kodeAkun||'').trim();
+    if(!kode || t.sumberKategori==='kas harian' || !JR_KATEGORI_VALID.includes(t.kategori)) return;
+    const nama = String(t.keterangan||'').trim(); if(!nama) return;
+    const k1 = t.kategori + '|' + normNamaAkun(nama);
+    if(!map[k1]) map[k1] = { kode, nama };
+    const k2 = t.kategori + '|' + kode + '|' + nama;
+    if(!seen[k2]){ seen[k2] = 1; list.push({ kategori:t.kategori, kode, nama }); }
+  });
+  list.sort((a,b)=>a.kode.localeCompare(b.kode) || a.nama.localeCompare(b.nama));
+  _akunUnggahCache = { ref:tx, n:tx.length, map, list };
+  return _akunUnggahCache;
+}
+function resolveAkunHarian(t){
+  const nm = String(t.kategoriRinci||'').trim(); if(!nm) return null;
+  const man = STATE.kategoriHarian && STATE.kategoriHarian._akun && STATE.kategoriHarian._akun[jenisHarianDariKategori(t.kategori) + '|' + nm];
+  if(man && man.kode) return { kode: man.kode, nama: man.nama || nm, sumber:'manual' };
+  const oto = akunUnggahan().map[t.kategori + '|' + normNamaAkun(nm)];
+  return oto ? { kode: oto.kode, nama: oto.nama, sumber:'otomatis' } : null;
+}
 function akunUtamaTransaksi(t){
-  const nama = String(t.kategoriRinci || t.keterangan || '(tanpa nama)').trim();
-  const kode = String(t.kodeAkun || '').trim();
+  let nama = String(t.kategoriRinci || t.keterangan || '(tanpa nama)').trim();
+  let kode = String(t.kodeAkun || '').trim();
+  if(!kode && t.kategoriRinci){ const r = resolveAkunHarian(t); if(r){ kode = r.kode; nama = r.nama; } }
   if(t.kategori==='Pendapatan') return { kode: kode||'4-0000', nama, tipe:'Pendapatan' };
   if(t.kategori==='OPEX')       return { kode: kode||'6-0000', nama, tipe:'Beban Operasional (OPEX)' };
   if(t.kategori==='CAPEX')      return { kode: kode||'1-5000', nama, tipe:'Aset Tetap (CAPEX)' };
@@ -2669,6 +2714,48 @@ document.querySelectorAll('.jtab').forEach(b=>b.addEventListener('click', ()=>{ 
 document.getElementById('jr-akun').addEventListener('change', ()=>{ jrBesarPage = 1; renderBukuBesar(); });
 document.getElementById('btn-export-jurnal').addEventListener('click', exportJurnal);
 wireMonthRangeFilter('jr-bulan','jr-tgl-dari','jr-tgl-sampai','btn-jr-reset-tgl', renderJurnal);
+
+/* ============================= PEMETAAN AKUN KATEGORI HARIAN ============================= */
+function renderAkunMap(){
+  const tb = document.getElementById('harian-akunmap-tbody');
+  if(!tb || APP_ROLE==='unit') return;
+  const kh = STATE.kategoriHarian || {};
+  const rows = [];
+  [['Pendapatan','Pendapatan'],['Pengeluaran','Operasional RS (OPEX)'],['NonRS','Lain-lain / Non-RS']].forEach(([jenis,lbl])=>{
+    (kh[jenis]||[]).forEach(nama=>rows.push({ jenis, lbl, nama }));
+  });
+  tb.innerHTML = rows.map((r,i)=>{
+    const kat = kategoriFromJenisHarian(r.jenis);
+    const man = kh._akun && kh._akun[r.jenis+'|'+r.nama];
+    const oto = akunUnggahan().map[kat+'|'+normNamaAkun(r.nama)];
+    const opts = akunUnggahan().list.filter(a=>a.kategori===kat);
+    let h = `<option value="">Otomatis${oto ? ' → '+escapeHtml(oto.kode+' · '+oto.nama) : ' (kode default)'}</option>`;
+    h += opts.map(a=>`<option value="${escapeHtml(a.kode+'|'+a.nama)}"${man && man.kode===a.kode && man.nama===a.nama ? ' selected' : ''}>${escapeHtml(a.kode+' · '+a.nama)}</option>`).join('');
+    if(man && !opts.some(a=>a.kode===man.kode && a.nama===man.nama)) h += `<option value="${escapeHtml(man.kode+'|'+man.nama)}" selected>${escapeHtml(man.kode+' · '+man.nama)} (manual)</option>`;
+    h += '<option value="__manual__">✏️ Isi kode manual…</option>';
+    return `<tr><td>${escapeHtml(r.lbl)}</td><td>${escapeHtml(r.nama)}</td><td><select data-am="${i}" style="max-width:360px;">${h}</select></td></tr>`;
+  }).join('');
+  tb.querySelectorAll('select[data-am]').forEach(sel=>{
+    sel.addEventListener('change', ()=>simpanAkunMap(rows[Number(sel.dataset.am)], sel.value));
+  });
+}
+async function simpanAkunMap(r, val){
+  let kodeAkun = '', namaAkun = '';
+  if(val==='__manual__'){
+    kodeAkun = (prompt(`Kode akun untuk "${r.nama}" (cth. 6-2100):`) || '').trim();
+    if(!kodeAkun){ renderAkunMap(); return; }
+    namaAkun = (prompt('Nama akun (kosongkan = sama dengan nama kategori):', r.nama) || r.nama).trim();
+  }else if(val){
+    const i = val.indexOf('|'); kodeAkun = val.slice(0,i); namaAkun = val.slice(i+1);
+  }
+  try{
+    const k = await callGAS('setKategoriHarianAkun', { pin: APP_PIN, jenis: r.jenis, nama: r.nama, kodeAkun, namaAkun });
+    STATE.kategoriHarian = k;
+    populateKategoriHarianSelect();
+    if(typeof renderOpexDetail==='function') try{ renderOpexDetail(); }catch(e){}
+    showToast(kodeAkun ? `"${r.nama}" dipetakan ke akun ${kodeAkun}.` : `"${r.nama}" kembali ke pemetaan otomatis.`);
+  }catch(err){ showToast('Gagal menyimpan pemetaan: '+err.message); renderAkunMap(); }
+}
 
 /* ============================= MUTASI KAS / BANK =============================
    Perpindahan uang antar Kas, Bank, Kas Besar. Disimpan di sheet MutasiKas (bukan Transaksi),
@@ -3255,6 +3342,7 @@ async function startApp(){
       const k = await callGAS('getKategoriHarian', {});
       STATE.kategoriHarian = k || { Pendapatan:[], Pengeluaran:[], NonRS:[] };
     }catch(e){ console.error(e); }
+    const am = document.getElementById('harian-akunmap-wrap'); if(am) am.style.display = 'none';
     goView('harian');
   }else{
     await loadState();
