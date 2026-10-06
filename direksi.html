@@ -147,6 +147,7 @@
       <div class="card"><div class="kpi-label">KAS (OPERASIONAL)</div><div class="kpi-val mono" id="kas-kas">Rp 0</div></div>
       <div class="card"><div class="kpi-label">BANK</div><div class="kpi-val mono" id="kas-bank">Rp 0</div></div>
       <div class="card"><div class="kpi-label">KAS BESAR</div><div class="kpi-val mono" id="kas-besar">Rp 0</div></div>
+      <span id="kas-extra" style="display:contents;"></span>
       <div class="card"><div class="kpi-label">TOTAL KAS &amp; BANK</div><div class="kpi-val mono" id="kas-total">Rp 0</div>
         <div class="kpi-sub" id="kas-sub">—</div></div>
       <div class="card"><div class="kpi-label">PIUTANG USAHA</div><div class="kpi-val mono" id="kas-piutang">Rp 0</div>
@@ -230,7 +231,9 @@ async function loadData(){
   try{ const m = await callGAS('getMutasiKas', { pin: APP_PIN }); mutasi = (m && m.mutasi) || []; }catch(e){ console.error(e); }
   let aset = [], mulai = '', modeCapex = '';
   try{ const s = await callGAS('getAsetTetap', { pin: APP_PIN }); aset = (s && s.aset) || []; mulai = (s && s.mulai) || ''; modeCapex = (s && s.modeCapex) || ''; }catch(e){ console.error(e); }
-  render(JSON.stringify(stateData), analysisText, { neracaAwal, mutasi, aset, mulai, modeCapex });
+  let akunKas = [];
+  try{ const ak = await callGAS('getAkunKas', {}); akunKas = (ak && ak.akun) || []; }catch(e){ console.error(e); }
+  render(JSON.stringify(stateData), analysisText, { neracaAwal, mutasi, aset, mulai, modeCapex, akunKas });
 }
 
 /* Posisi Kas, Bank, Kas Besar = saldo awal + transaksi + mutasi (sama dengan Buku Besar di Mode Operasional). */
@@ -241,7 +244,10 @@ function renderPosisiKas(tx, extra){
   const net = { 'Kas': find('Saldo Awal Kas'), 'Bank': find('Saldo Awal Bank'), 'Kas Besar': find('Saldo Awal Kas Besar'),
                 'Piutang Usaha': find('Piutang Usaha'), 'Utang Usaha': -find('Kewajiban Jangka Pendek') };
   const lain = find('Kas & Bank');
+  const kustom = (extra.akunKas||[]).map(a=>a.nama);
+  kustom.forEach(n=>{ net[n] = find('Saldo Awal '+n); });
   const norm = v => { const x = String(v||'').trim().toLowerCase();
+    const cu = kustom.filter(n=>n.toLowerCase()===x)[0]; if(cu) return cu;
     return x==='bank' ? 'Bank' : (x==='kas besar' ? 'Kas Besar' : (x==='piutang usaha'||x==='piutang' ? 'Piutang Usaha' : (x==='utang usaha'||x==='utang'||x==='hutang usaha' ? 'Utang Usaha' : 'Kas'))); };
   let n = 0, totD = 0, totK = 0;
   tx.forEach(t=>{
@@ -258,7 +264,9 @@ function renderPosisiKas(tx, extra){
   });
   const set = (id, v) => { const el = document.getElementById(id); el.textContent = fmtRp(v); el.style.color = v<0 ? 'var(--red)' : ''; };
   set('kas-kas', net['Kas']); set('kas-bank', net['Bank']); set('kas-besar', net['Kas Besar']);
-  set('kas-total', net['Kas'] + net['Bank'] + net['Kas Besar'] + lain);
+  set('kas-total', net['Kas'] + net['Bank'] + net['Kas Besar'] + kustom.reduce((s,n)=>s+net[n],0) + lain);
+  const ex = document.getElementById('kas-extra');
+  if(ex) ex.innerHTML = kustom.map(n=>`<div class="card"><div class="kpi-label">${n.replace(/[&<>"]/g,'').toUpperCase()}</div><div class="kpi-val mono" style="${net[n]<0?'color:var(--red)':''}">${fmtRp(net[n])}</div></div>`).join('');
   set('kas-piutang', net['Piutang Usaha']); set('kas-utang', -net['Utang Usaha']);
   const awalIsi = find('Saldo Awal Kas') || find('Saldo Awal Bank') || find('Saldo Awal Kas Besar') || lain;
   document.getElementById('kas-sub').textContent = `${fmtNum(n)} jurnal otomatis · ` + (Math.round(totD-totK)===0 ? 'Seimbang ✓' : 'Tidak seimbang')
