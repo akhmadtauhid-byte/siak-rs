@@ -438,11 +438,24 @@
           <button class="btn ghost" id="btn-harian-kategori-baru" type="button">+ Kategori Baru</button>
           <button class="btn ghost" id="btn-harian-kategori-hapus" type="button">🗑 Hapus Kategori Terpilih</button>
         </div>
+        <details id="harian-kelolakas-wrap" class="admin-only-block" style="margin-top:12px;border:1px solid var(--border);border-radius:9px;padding:10px 14px;">
+          <summary style="cursor:pointer;font-weight:600;font-size:13px;">💳 Kelola Sumber Kas (pilihan "Diterima/dibayar lewat")</summary>
+          <div style="font-size:12px;color:var(--muted);margin:8px 0;">Tambah sumber kas sendiri (mis. Kas Cadangan, Rekening BRI). Sumber kas baru langsung muncul di Operasional Harian, Mutasi Kas/Bank, Jurnal, Buku Besar, dan Neraca (isi saldo awalnya lewat Edit Saldo Awal). Kas, Bank, dan Kas Besar adalah akun bawaan dan tidak bisa diubah/dihapus.</div>
+          <div style="overflow-x:auto;"><table class="tbl" style="width:100%;">
+            <thead><tr><th>Nama</th><th>Jenis</th><th>Kode akun</th><th>Status</th><th></th></tr></thead>
+            <tbody id="kk-tbody"></tbody>
+          </table></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:end;">
+            <div><label style="font-weight:400;font-size:11.5px;">Nama sumber kas</label><input type="text" class="textinput" id="kk-nama" placeholder="cth. Kas Cadangan" maxlength="40"></div>
+            <div><label style="font-weight:400;font-size:11.5px;">Jenis</label><select id="kk-tipe"><option value="Kas">Kas (tunai)</option><option value="Bank">Bank / rekening</option></select></div>
+            <button type="button" class="btn primary" id="btn-kk-tambah">+ Tambah Sumber Kas</button>
+          </div>
+        </details>
         <details id="harian-akunmap-wrap" class="admin-only-block" style="margin-top:12px;border:1px solid var(--border);border-radius:9px;padding:10px 14px;">
           <summary style="cursor:pointer;font-weight:600;font-size:13px;">🔗 Pemetaan Akun Kategori (samakan dengan akun Buku Besar / data unggahan)</summary>
           <div style="font-size:12px;color:var(--muted);margin:8px 0;">Kategori yang namanya sama dengan akun di data unggahan otomatis memakai akun itu. Untuk yang belum sama, pilih akun yang sesuai atau isi kode manual — Rincian OPEX, Jurnal, dan Buku Besar akan ikut memakai akun yang sama.</div>
           <div style="overflow-x:auto;"><table class="tbl" style="width:100%;">
-            <thead><tr><th>Jenis</th><th>Kategori</th><th>Akun (kode · nama)</th></tr></thead>
+            <thead><tr><th>Jenis</th><th>Kategori</th><th>Akun (kode · nama)</th><th>Kas default (diterima/dibayar lewat)</th></tr></thead>
             <tbody id="harian-akunmap-tbody"></tbody>
           </table></div>
         </details>
@@ -786,6 +799,7 @@
         <div class="kpi"><div class="kpi-label">SALDO KAS (OPERASIONAL)</div><div class="kpi-val mono" id="mk-saldo-kas">Rp 0</div></div>
         <div class="kpi"><div class="kpi-label">SALDO BANK</div><div class="kpi-val mono" id="mk-saldo-bank">Rp 0</div></div>
         <div class="kpi"><div class="kpi-label">SALDO KAS BESAR</div><div class="kpi-val mono" id="mk-saldo-besar">Rp 0</div></div>
+        <span id="mk-kpi-extra" style="display:contents;"></span>
         <div class="kpi"><div class="kpi-label">PIUTANG USAHA</div><div class="kpi-val mono" id="mk-saldo-piutang">Rp 0</div></div>
         <div class="kpi"><div class="kpi-label">UTANG USAHA</div><div class="kpi-val mono" id="mk-saldo-utang">Rp 0</div></div>
       </div>
@@ -803,9 +817,9 @@
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;">
           <div><label style="font-weight:400;font-size:11.5px;">Tanggal</label><input type="date" class="textinput" id="mk-tanggal"></div>
           <div><label style="font-weight:400;font-size:11.5px;">Dari akun</label>
-            <select id="mk-dari"><option>Bank</option><option>Kas</option><option>Kas Besar</option><option>Piutang Usaha</option><option>Utang Usaha</option></select></div>
+            <select id="mk-dari"></select></div>
           <div><label style="font-weight:400;font-size:11.5px;">Ke akun</label>
-            <select id="mk-ke"><option>Kas</option><option>Bank</option><option>Kas Besar</option><option>Piutang Usaha</option><option>Utang Usaha</option></select></div>
+            <select id="mk-ke"></select></div>
           <div><label style="font-weight:400;font-size:11.5px;">Nominal</label><input type="number" min="0" class="textinput" id="mk-nominal" placeholder="0"></div>
           <div style="grid-column:1/-1;"><label style="font-weight:400;font-size:11.5px;">Keterangan (opsional)</label><input type="text" class="textinput" id="mk-keterangan" placeholder="cth. Penarikan tunai untuk operasional"></div>
         </div>
@@ -1082,7 +1096,7 @@
 
 <script>
 /* ============================= STATE ============================= */
-let STATE = { batches: [], transactions: [], neracaAwal: { tanggalAwal:'', items:[] }, kategoriHarian: { Pendapatan:[], Pengeluaran:[], NonRS:[] }, mutasiKas: [], asetTetap: [], penyusutanMulai: '', modeCapex: '' };
+let STATE = { batches: [], transactions: [], neracaAwal: { tanggalAwal:'', items:[] }, kategoriHarian: { Pendapatan:[], Pengeluaran:[], NonRS:[] }, mutasiKas: [], asetTetap: [], penyusutanMulai: '', modeCapex: '', akunKas: [], kasDefault: {} };
 let harianJenisAktif = 'Pendapatan';
 
 /* ============================= PERAN & AKSES (ADMIN vs UNIT) =============================
@@ -1146,13 +1160,14 @@ async function callGAS(action, payload){
    3) Navigasi antar-menu (goView) murni membaca STATE yang sudah ada di memori browser — tidak
       ada panggilan jaringan sama sekali, makanya instan begitu data awal termuat. */
 async function loadState(){
-  const [dataRes, analysisRes, neracaRes, kategoriRes, mutasiRes, asetRes] = await Promise.allSettled([
+  const [dataRes, analysisRes, neracaRes, kategoriRes, mutasiRes, asetRes, akunKasRes] = await Promise.allSettled([
     callGAS('getData', { pin: APP_PIN }),
     callGAS('getAnalysis', { pin: APP_PIN }),
     callGAS('getNeracaAwal', { pin: APP_PIN }),
     callGAS('getKategoriHarian', {}),
     callGAS('getMutasiKas', { pin: APP_PIN }),
     callGAS('getAsetTetap', { pin: APP_PIN }),
+    callGAS('getAkunKas', {}),
   ]);
   if(dataRes.status==='fulfilled'){
     STATE.batches = dataRes.value.batches || [];
@@ -1176,6 +1191,10 @@ async function loadState(){
   STATE.asetTetap = av.aset || []; STATE.penyusutanMulai = av.mulai || ''; STATE.modeCapex = av.modeCapex || '';
   if(asetRes.status==='rejected') console.error(asetRes.reason);
   ASET_VER++;
+  if(akunKasRes.status==='fulfilled' && akunKasRes.value){
+    STATE.akunKas = akunKasRes.value.akun || []; STATE.kasDefault = akunKasRes.value.kasDefault || {};
+  }else if(akunKasRes.status==='rejected') console.error(akunKasRes.reason);
+  rebuildAkunKas();
 }
 /* saveState() lama (bulk-save ke localStorage) sudah tidak dipakai — setiap perubahan
    (impor, ubah kategori, hapus batch) langsung memanggil endpoint GAS masing-masing,
@@ -2262,9 +2281,25 @@ function populateAkunKasHarian(){
   const prev = sel.value;
   const extra = harianJenisAktif==='Pendapatan' ? 'Piutang Usaha' : 'Utang Usaha';
   const lbl = { 'Piutang Usaha':'Piutang Usaha (belum diterima / ditagihkan)', 'Utang Usaha':'Utang Usaha (belum dibayar)' };
-  const opts = ['Kas','Bank','Kas Besar', extra];
-  sel.innerHTML = opts.map(o=>`<option value="${o}">${lbl[o]||o}</option>`).join('');
+  const aktifKustom = (STATE.akunKas||[]).filter(a=>a.aktif!==false).map(a=>a.nama);
+  const opts = ['Kas','Bank','Kas Besar', ...aktifKustom, extra];
+  if(prev && !opts.includes(prev) && AKUN_KAS_MAP[prev]) opts.splice(opts.length-1, 0, prev);
+  sel.innerHTML = opts.map(o=>`<option value="${escapeHtml(o)}">${escapeHtml(lbl[o]||o)}</option>`).join('');
   sel.value = opts.includes(prev) ? prev : 'Kas';
+}
+/** Pilih kategori -> "Diterima/dibayar lewat" otomatis mengikuti kas default kategori itu (bila diatur admin). */
+function terapkanKasDefault(){
+  const kat = document.getElementById('harian-kategori').value, sel = document.getElementById('harian-akunkas');
+  const d = (STATE.kasDefault||{})[harianJenisAktif+'|'+kat];
+  if(d && Array.from(sel.options).some(o=>o.value===d)) sel.value = d;
+}
+function setAkunKasHarian(nama){
+  const sel = document.getElementById('harian-akunkas');
+  if(!Array.from(sel.options).some(o=>o.value===nama)){
+    const o = document.createElement('option'); o.value = nama; o.textContent = nama + ' (nonaktif)';
+    sel.insertBefore(o, sel.options[sel.options.length-1]);
+  }
+  sel.value = nama;
 }
 function populateKategoriHarianSelect(){
   populateAkunKasHarian();
@@ -2277,7 +2312,9 @@ function populateKategoriHarianSelect(){
     return `<option value="${escapeHtml(k)}">${escapeHtml(k)}${r ? ' · '+escapeHtml(r.kode) : ''}</option>`;
   }).join('');
   if(list.includes(prev)) sel.value = prev;
+  if(typeof editingKasHarianId!=='undefined' && !editingKasHarianId && !list.includes(prev)) terapkanKasDefault();
   updateJurnalPreview();
+  if(typeof renderKelolaKas==='function') renderKelolaKas();
   if(typeof renderAkunMap==='function') renderAkunMap();
 }
 
@@ -2302,6 +2339,7 @@ function updateJurnalPreview(){
 }
 ['harian-nominal'].forEach(id=>document.getElementById(id).addEventListener('input', updateJurnalPreview));
 ['harian-kategori','harian-akunkas'].forEach(id=>document.getElementById(id).addEventListener('change', updateJurnalPreview));
+document.getElementById('harian-kategori').addEventListener('change', ()=>{ if(!editingKasHarianId){ terapkanKasDefault(); updateJurnalPreview(); } });
 
 document.querySelectorAll('.harian-jenis-btn').forEach(btn=>{
   btn.addEventListener('click', ()=>{
@@ -2354,7 +2392,7 @@ function startEditKasHarian(id){
   const ket = t.kategoriRinci ? String(t.keterangan||'').replace(new RegExp('^'+t.kategoriRinci.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'( - )?'), '') : (t.keterangan||'');
   document.getElementById('harian-keterangan').value = ket;
   document.getElementById('harian-nominal').value = Math.abs(t.amount);
-  document.getElementById('harian-akunkas').value = akunKasBank(t).nama;
+  setAkunKasHarian(akunKasBank(t).nama);
   if(t.kategoriRinci){
     // Pastikan kategori lama tetap terpilih meski bukan yang pertama di daftar.
     const sel = document.getElementById('harian-kategori');
@@ -2657,6 +2695,22 @@ const AKUN_UTANG   = { kode:'2-1100', nama:'Utang Usaha',   tipe:'Utang' };
 const AKUN_KAS_MAP = { 'Kas':AKUN_KAS, 'Bank':AKUN_BANK, 'Kas Besar':AKUN_KASBESAR, 'Piutang Usaha':AKUN_PIUTANG, 'Utang Usaha':AKUN_UTANG };
 const AKUN_BUKU_NAMA = ['Kas','Bank','Kas Besar','Piutang Usaha','Utang Usaha'];
 /** Akun "buku" tetap (kas, piutang, utang) — bukan akun pendapatan/beban dari kategori. */
+/** Sumber kas kustom (Kelola Sumber Kas) -> ikut masuk peta akun, Buku Besar, Neraca, dan pilihan dropdown. */
+const KAS_KUSTOM_NAMA = [];
+function rebuildAkunKas(){
+  KAS_KUSTOM_NAMA.forEach(n=>{ delete AKUN_KAS_MAP[n]; delete KAS_AWAL_POS[n]; });
+  KAS_KUSTOM_NAMA.length = 0;
+  (STATE.akunKas||[]).forEach(a=>{
+    if(!a || !a.nama || AKUN_KAS_MAP[a.nama]) return;
+    AKUN_KAS_MAP[a.nama] = { kode: a.kode || '1-1199', nama: a.nama, tipe: 'Kas & Bank' };
+    KAS_AWAL_POS[a.nama] = 'Saldo Awal ' + a.nama;
+    KAS_KUSTOM_NAMA.push(a.nama);
+  });
+  AKUN_BUKU_NAMA.length = 0;
+  ['Kas','Bank','Kas Besar', ...KAS_KUSTOM_NAMA, 'Piutang Usaha','Utang Usaha'].forEach(n=>AKUN_BUKU_NAMA.push(n));
+  KAS_AKUN_NAMA.length = 0;
+  ['Kas','Bank','Kas Besar', ...KAS_KUSTOM_NAMA].forEach(n=>KAS_AKUN_NAMA.push(n));
+}
 function isAkunBuku(a){ const x = AKUN_KAS_MAP[a.nama]; return !!x && x.tipe===a.tipe && x.kode===a.kode; }
 function akunDebitNormal(a){ return a.tipe!=='Pendapatan' && a.tipe!=='Utang' && a.tipe!=='Akumulasi Penyusutan'; }
 const JR_TIPE_ORDER = ['Kas & Bank','Piutang','Aset Tetap (CAPEX)','Akumulasi Penyusutan','Utang','Pendapatan','Beban Operasional (OPEX)','Beban Penyusutan','Pengeluaran Lain-lain'];
@@ -2664,6 +2718,7 @@ const JR_KATEGORI_VALID = ['Pendapatan','OPEX','CAPEX','Pengeluaran'];
 
 function akunKasBank(t){
   const x = String(t.akunKas||'').trim().toLowerCase();
+  for(const n of KAS_KUSTOM_NAMA){ if(n.toLowerCase()===x) return AKUN_KAS_MAP[n]; }
   if(x==='bank') return AKUN_BANK;
   if(x==='kas besar') return AKUN_KASBESAR;
   if(x==='piutang usaha' || x==='piutang') return AKUN_PIUTANG;
@@ -2989,8 +3044,15 @@ function renderAkunMap(){
     h += opts.map(a=>`<option value="${escapeHtml(a.kode+'|'+a.nama)}"${man && man.kode===a.kode && man.nama===a.nama ? ' selected' : ''}>${escapeHtml(a.kode+' · '+a.nama)}</option>`).join('');
     if(man && !opts.some(a=>a.kode===man.kode && a.nama===man.nama)) h += `<option value="${escapeHtml(man.kode+'|'+man.nama)}" selected>${escapeHtml(man.kode+' · '+man.nama)} (manual)</option>`;
     h += '<option value="__manual__">✏️ Isi kode manual…</option>';
-    return `<tr><td>${escapeHtml(r.lbl)}</td><td>${escapeHtml(r.nama)}</td><td><select data-am="${i}" style="max-width:360px;">${h}</select></td></tr>`;
+    const kd = (STATE.kasDefault||{})[r.jenis+'|'+r.nama] || '';
+    const kasOpts = ['Kas','Bank','Kas Besar', ...(STATE.akunKas||[]).filter(a=>a.aktif!==false).map(a=>a.nama)];
+    if(kd && !kasOpts.includes(kd)) kasOpts.push(kd);
+    const kh2 = '<option value="">— pilih manual —</option>' + kasOpts.map(n=>`<option value="${escapeHtml(n)}"${n===kd?' selected':''}>${escapeHtml(n)}</option>`).join('');
+    return `<tr><td>${escapeHtml(r.lbl)}</td><td>${escapeHtml(r.nama)}</td><td><select data-am="${i}" style="max-width:360px;">${h}</select></td><td><select data-kd="${i}" style="max-width:200px;">${kh2}</select></td></tr>`;
   }).join('');
+  tb.querySelectorAll('select[data-kd]').forEach(sel=>{
+    sel.addEventListener('change', ()=>simpanKasDefault(rows[Number(sel.dataset.kd)], sel.value));
+  });
   tb.querySelectorAll('select[data-am]').forEach(sel=>{
     sel.addEventListener('change', ()=>simpanAkunMap(rows[Number(sel.dataset.am)], sel.value));
   });
@@ -3013,6 +3075,86 @@ async function simpanAkunMap(r, val){
   }catch(err){ showToast('Gagal menyimpan pemetaan: '+err.message); renderAkunMap(); }
 }
 
+/* ============================= KELOLA SUMBER KAS ============================= */
+function renderKelolaKas(){
+  const tb = document.getElementById('kk-tbody');
+  if(!tb || APP_ROLE==='unit') return;
+  const bawaan = ['Kas','Bank','Kas Besar'].map(n=>`<tr><td>${n}</td><td>${n==='Bank'?'Bank':'Kas'}</td><td class="mono">${escapeHtml(AKUN_KAS_MAP[n].kode)}</td><td>Bawaan</td><td></td></tr>`).join('');
+  const kustom = (STATE.akunKas||[]).map(a=>`<tr>
+    <td>${escapeHtml(a.nama)}</td><td>${escapeHtml(a.tipe)}</td><td class="mono">${escapeHtml(a.kode)}</td>
+    <td>${a.aktif===false ? '<span style="color:var(--muted);">Nonaktif</span>' : 'Aktif'}</td>
+    <td style="white-space:nowrap;text-align:right;">
+      <button class="btn" onclick="kkUbahNama('${escapeHtml(a.id)}')">Ubah nama</button>
+      <button class="btn" onclick="kkUbahKode('${escapeHtml(a.id)}')">Kode</button>
+      <button class="btn" onclick="kkToggle('${escapeHtml(a.id)}')">${a.aktif===false ? 'Aktifkan' : 'Nonaktifkan'}</button>
+      <button class="btn" onclick="kkHapus('${escapeHtml(a.id)}')">Hapus</button>
+    </td></tr>`).join('');
+  tb.innerHTML = bawaan + kustom;
+}
+function kkRefresh(){
+  rebuildAkunKas(); ASET_VER++;
+  populateAkunKasHarian(); renderKelolaKas();
+  if(typeof renderAkunMap==='function') renderAkunMap();
+  updateJurnalPreview();
+}
+document.getElementById('btn-kk-tambah').addEventListener('click', async ()=>{
+  const nama = document.getElementById('kk-nama').value.trim(), tipe = document.getElementById('kk-tipe').value;
+  if(!nama){ showToast('Isi nama sumber kas dulu.'); return; }
+  try{
+    const a = await callGAS('addAkunKas', { pin: APP_PIN, nama, tipe });
+    STATE.akunKas.push(a); document.getElementById('kk-nama').value = '';
+    kkRefresh(); showToast(`"${a.nama}" ditambahkan (akun ${a.kode}). Isi saldo awalnya lewat Edit Saldo Awal bila perlu.`);
+  }catch(e){ showToast('Gagal menambah: '+e.message); }
+});
+async function kkUpdate(id, patch, okMsg){
+  try{
+    const a = await callGAS('updateAkunKas', Object.assign({ pin: APP_PIN, id }, patch));
+    const i = STATE.akunKas.findIndex(x=>x.id===id); const lama = i>=0 ? STATE.akunKas[i].nama : '';
+    if(i>=0) STATE.akunKas[i] = a;
+    if(lama && lama!==a.nama){
+      // nama berubah: server sudah memperbarui transaksi, mutasi, saldo awal, dan kas default -> samakan salinan lokal
+      (STATE.transactions||[]).forEach(t=>{ if(String(t.akunKas||'').toLowerCase()===lama.toLowerCase()) t.akunKas = a.nama; });
+      (STATE.mutasiKas||[]).forEach(m=>{ if(m.dari===lama) m.dari = a.nama; if(m.ke===lama) m.ke = a.nama; });
+      ((STATE.neracaAwal&&STATE.neracaAwal.items)||[]).forEach(it=>{ if(it.pos==='Saldo Awal '+lama) it.pos = 'Saldo Awal '+a.nama; });
+      Object.keys(STATE.kasDefault||{}).forEach(k=>{ if(STATE.kasDefault[k]===lama) STATE.kasDefault[k] = a.nama; });
+    }
+    kkRefresh(); showToast(okMsg);
+  }catch(e){ showToast('Gagal: '+e.message); }
+}
+function kkUbahNama(id){
+  const a = STATE.akunKas.find(x=>x.id===id); if(!a) return;
+  const n = (prompt('Nama baru untuk sumber kas ini:', a.nama)||'').trim();
+  if(n && n!==a.nama) kkUpdate(id, { nama:n }, `Nama diubah menjadi "${n}" (semua transaksi ikut diperbarui).`);
+}
+function kkUbahKode(id){
+  const a = STATE.akunKas.find(x=>x.id===id); if(!a) return;
+  const k = (prompt('Kode akun (cth. 1-1101):', a.kode)||'').trim();
+  if(k && k!==a.kode) kkUpdate(id, { kode:k }, 'Kode akun diperbarui.');
+}
+function kkToggle(id){
+  const a = STATE.akunKas.find(x=>x.id===id); if(!a) return;
+  kkUpdate(id, { aktif: a.aktif===false }, a.aktif===false ? 'Sumber kas diaktifkan.' : 'Sumber kas dinonaktifkan (tidak muncul lagi di pilihan).');
+}
+async function kkHapus(id){
+  const a = STATE.akunKas.find(x=>x.id===id); if(!a) return;
+  if(!confirm(`Hapus sumber kas "${a.nama}"? Hanya bisa jika belum dipakai transaksi/mutasi.`)) return;
+  try{
+    await callGAS('deleteAkunKas', { pin: APP_PIN, id });
+    STATE.akunKas = STATE.akunKas.filter(x=>x.id!==id);
+    ((STATE.neracaAwal&&STATE.neracaAwal.items)||[]);
+    if(STATE.neracaAwal && STATE.neracaAwal.items) STATE.neracaAwal.items = STATE.neracaAwal.items.filter(it=>it.pos!=='Saldo Awal '+a.nama);
+    Object.keys(STATE.kasDefault||{}).forEach(k=>{ if(STATE.kasDefault[k]===a.nama) delete STATE.kasDefault[k]; });
+    kkRefresh(); showToast('Sumber kas dihapus.');
+  }catch(e){ showToast('Gagal menghapus: '+e.message); }
+}
+async function simpanKasDefault(r, val){
+  try{
+    const res = await callGAS('setKasDefaultKategori', { pin: APP_PIN, jenis: r.jenis, nama: r.nama, akunKas: val });
+    STATE.kasDefault = res.kasDefault || {};
+    showToast(val ? `Kategori "${r.nama}" otomatis memakai ${val}.` : `Kas default "${r.nama}" dihapus.`);
+  }catch(e){ showToast('Gagal menyimpan kas default: '+e.message); renderAkunMap(); }
+}
+
 /* ============================= MUTASI KAS / BANK =============================
    Perpindahan uang antar Kas, Bank, Kas Besar. Disimpan di sheet MutasiKas (bukan Transaksi),
    jadi Laba Rugi/Rekap/Dashboard tidak terpengaruh; hanya Jurnal & Buku Besar yang ikut. */
@@ -3022,7 +3164,15 @@ function bukaEditSaldoAwal(){
   goView('neraca');
   document.getElementById('btn-edit-neraca-awal').click();
 }
+function mkPopulate(){
+  ['mk-dari','mk-ke'].forEach(id=>{
+    const sel = document.getElementById(id), prev = sel.value;
+    sel.innerHTML = AKUN_BUKU_NAMA.map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+    if(prev && AKUN_BUKU_NAMA.includes(prev)) sel.value = prev;
+  });
+}
 function mkResetForm(){
+  mkPopulate();
   editingMutasiId = null;
   document.getElementById('mk-tanggal').value = new Date().toISOString().slice(0,10);
   document.getElementById('mk-dari').value = 'Bank';
@@ -3042,12 +3192,15 @@ function mkUpdatePreview(){
   box.innerHTML = `<b>Jurnal otomatis:</b> Debit <b>${escapeHtml(ke)}</b> ${fmtRp(nominal)} · Kredit <b>${escapeHtml(dari)}</b> ${fmtRp(nominal)}`;
 }
 function renderMutasi(){
+  mkPopulate();
   if(!document.getElementById('mk-tanggal').value) mkResetForm();
   const s = saldoAkunBuku();
   const setS = (id,v)=>{ const el=document.getElementById(id); el.textContent = fmtRp(v); el.style.color = v<0 ? 'var(--red)' : ''; };
   setS('mk-saldo-kas', s['Kas']); setS('mk-saldo-bank', s['Bank']); setS('mk-saldo-besar', s['Kas Besar']); setS('mk-saldo-piutang', s['Piutang Usaha']); setS('mk-saldo-utang', s['Utang Usaha']);
+  document.getElementById('mk-kpi-extra').innerHTML = KAS_KUSTOM_NAMA.map((n,i)=>`<div class="kpi"><div class="kpi-label">${escapeHtml(n.toUpperCase())}</div><div class="kpi-val mono" id="mk-saldo-x${i}">Rp 0</div></div>`).join('');
+  KAS_KUSTOM_NAMA.forEach((n,i)=>setS('mk-saldo-x'+i, s[n]));
   const aw = saldoAwalKas();
-  const awalIsi = aw['Kas'] || aw['Bank'] || aw['Kas Besar'];
+  const awalIsi = KAS_AKUN_NAMA.some(n=>aw[n]);
   document.getElementById('mk-note').innerHTML = 'Saldo = saldo awal + transaksi + mutasi yang tercatat. '
     + (awalIsi ? '' : 'Saldo awal belum diisi, jadi saldo bisa tampak negatif. ')
     + (aw.lain ? `Ada saldo awal "Kas &amp; Bank" Rp ${fmtNum(aw.lain)} yang belum dirinci per akun. ` : '')
@@ -3211,9 +3364,10 @@ const KAS_AKUN_NAMA = ['Kas','Bank','Kas Besar'];
 const KAS_AWAL_POS = { 'Kas':'Saldo Awal Kas', 'Bank':'Saldo Awal Bank', 'Kas Besar':'Saldo Awal Kas Besar' };
 function saldoAwalKas(){
   const items = (STATE.neracaAwal && STATE.neracaAwal.items) || [];
-  return { 'Kas': neracaFind(items, KAS_AWAL_POS['Kas']), 'Bank': neracaFind(items, KAS_AWAL_POS['Bank']),
-           'Kas Besar': neracaFind(items, KAS_AWAL_POS['Kas Besar']), lain: neracaFind(items, 'Kas & Bank'),
+  const o = { lain: neracaFind(items, 'Kas & Bank'),
            'Piutang Usaha': neracaFind(items, 'Piutang Usaha'), 'Utang Usaha': neracaFind(items, 'Kewajiban Jangka Pendek') };
+  KAS_AKUN_NAMA.forEach(n=>{ o[n] = neracaFind(items, KAS_AWAL_POS[n]); });
+  return o;
 }
 /** Saldo akhir akun kas, piutang, dan utang = saldo awal + seluruh transaksi + mutasi (satu sumber: jurnal).
  *  Nilai dalam sisi normal akun (Kas/Bank/Piutang: Debit; Utang: Kredit). */
@@ -3228,12 +3382,15 @@ function saldoAkunBuku(){
   return res;
 }
 function saldoKasBankSemua(){
-  const r = saldoAkunBuku();
-  return { 'Kas': r['Kas'], 'Bank': r['Bank'], 'Kas Besar': r['Kas Besar'] };
+  const r = saldoAkunBuku(), o = {};
+  KAS_AKUN_NAMA.forEach(n=>{ o[n] = r[n]; });
+  return o;
 }
 function kasAkhirNeraca(){
   const b = saldoAkunBuku(), lain = saldoAwalKas().lain;
-  return { b, s: { 'Kas': b['Kas'], 'Bank': b['Bank'], 'Kas Besar': b['Kas Besar'] }, lain, total: b['Kas'] + b['Bank'] + b['Kas Besar'] + lain };
+  const s = {}; let total = lain;
+  KAS_AKUN_NAMA.forEach(n=>{ s[n] = b[n]; total += b[n]; });
+  return { b, s, lain, total };
 }
 /* ============================= MENU PENYUSUTAN ASET ============================= */
 let editingAsetId = null, asetDetailId = null, asetPrefillCapexId = '';
@@ -3528,6 +3685,7 @@ function renderNeraca(){
     row('&nbsp;&nbsp;&nbsp;– Kas', kasInfo.s['Kas']) +
     row('&nbsp;&nbsp;&nbsp;– Bank', kasInfo.s['Bank']) +
     row('&nbsp;&nbsp;&nbsp;– Kas Besar', kasInfo.s['Kas Besar']) +
+    KAS_KUSTOM_NAMA.map(n=>row('&nbsp;&nbsp;&nbsp;– '+escapeHtml(n), kasInfo.s[n])).join('') +
     (kasInfo.lain ? row('&nbsp;&nbsp;&nbsp;– Belum dirinci per akun', kasInfo.lain) : '') +
     row('Piutang Usaha', piutang) +
     row('Aset Tetap', asetTetapAkhir) +
@@ -3554,7 +3712,8 @@ function buildNeracaEditFields(){
   const existing = (STATE.neracaAwal && STATE.neracaAwal.items && STATE.neracaAwal.items.length) ? STATE.neracaAwal.items : null;
   const items = existing ? existing.map(i=>Object.assign({}, i)) : NERACA_DEFAULTS.map(([pos,kelompok])=>({pos,kelompok,saldo:0}));
   NERACA_DEFAULTS.forEach(([pos,kelompok])=>{ if(!items.some(i=>i.pos===pos)) items.push({pos,kelompok,saldo:0}); });
-  const ord = pos=>{ const i = NERACA_DEFAULTS.findIndex(d=>d[0]===pos); return i<0 ? 99 : i; };
+  KAS_KUSTOM_NAMA.forEach(n=>{ if(!items.some(i=>i.pos===KAS_AWAL_POS[n])) items.push({pos:KAS_AWAL_POS[n],kelompok:'Aset',saldo:0}); });
+  const ord = pos=>{ const k = KAS_KUSTOM_NAMA.findIndex(n=>KAS_AWAL_POS[n]===pos); if(k>=0) return 2.5+k/100; const i = NERACA_DEFAULTS.findIndex(d=>d[0]===pos); return i<0 ? 99 : i; };
   items.sort((a,b)=>ord(a.pos)-ord(b.pos));
   document.getElementById('neraca-tgl-awal').value = (STATE.neracaAwal && STATE.neracaAwal.tanggalAwal) || '';
   document.getElementById('neraca-edit-fields').innerHTML = items.map(it=>`
@@ -3614,6 +3773,7 @@ function exportNeraca(){
     ['   - Kas', kasInfo.s['Kas']],
     ['   - Bank', kasInfo.s['Bank']],
     ['   - Kas Besar', kasInfo.s['Kas Besar']],
+    ...KAS_KUSTOM_NAMA.map(n=>['   - '+n, kasInfo.s[n]]),
     ['   - Belum dirinci per akun', kasInfo.lain],
     ['Piutang Usaha', piutang],
     ['Aset Tetap', asetTetapAkhir],
@@ -3895,7 +4055,13 @@ async function startApp(){
       const k = await callGAS('getKategoriHarian', {});
       STATE.kategoriHarian = k || { Pendapatan:[], Pengeluaran:[], NonRS:[] };
     }catch(e){ console.error(e); }
+    try{
+      const ak = await callGAS('getAkunKas', {});
+      STATE.akunKas = (ak && ak.akun) || []; STATE.kasDefault = (ak && ak.kasDefault) || {};
+      rebuildAkunKas();
+    }catch(e){ console.error(e); }
     const am = document.getElementById('harian-akunmap-wrap'); if(am) am.style.display = 'none';
+    const kk = document.getElementById('harian-kelolakas-wrap'); if(kk) kk.style.display = 'none';
     goView('harian');
   }else{
     await loadState();
