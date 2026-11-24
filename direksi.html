@@ -112,6 +112,7 @@
     </div>
     <div class="hero-actions no-print">
       <button class="btn" onclick="window.print()">⬇ Unduh sebagai PDF</button>
+      <button class="btn ghost" id="btn-keluar">⎋ Keluar</button>
     </div>
   </div>
 </div>
@@ -676,6 +677,10 @@ async function trySubmitPin(){
   }
   btn.disabled = false;
 }
+document.getElementById('btn-keluar').addEventListener('click', ()=>{
+  ['siak-rs-pin-ok','siak-rs-role','siak-rs-pin','siak-rs-unit'].forEach(k=>sessionStorage.removeItem(k));
+  location.reload();
+});
 document.getElementById('pin-submit').addEventListener('click', trySubmitPin);
 document.getElementById('pin-input').addEventListener('keydown', e=>{ if(e.key==='Enter') trySubmitPin(); });
 
