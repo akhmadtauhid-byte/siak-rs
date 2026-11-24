@@ -120,7 +120,7 @@
 
   <div id="empty-state" class="card empty" style="display:none;">
     <h3>Belum ada data untuk ditampilkan</h3>
-    <p>Data keuangan belum diunggah oleh tim keuangan. Ringkasan ini akan otomatis terisi setelah data tersedia.</p>
+    <p id="empty-msg">Data keuangan belum diunggah oleh tim keuangan. Ringkasan ini akan otomatis terisi setelah data tersedia.</p>
   </div>
 
   <div id="content" style="display:none;">
@@ -256,7 +256,17 @@ let APP_PIN = '';
 
 async function loadData(){
   let stateData = { batches:[], transactions:[] }, analysisText = null;
-  try{ stateData = await callGAS('getData', { pin: APP_PIN }); }catch(e){ console.error(e); }
+  let loadErr = '';
+  try{ stateData = await callGAS('getData', { pin: APP_PIN }); }catch(e){ console.error(e); loadErr = (e && e.message) ? e.message : String(e); }
+  if(loadErr){
+    // Tampilkan penyebab sebenarnya (bukan "belum ada data") agar mudah ditelusuri.
+    document.getElementById('empty-state').style.display = 'block';
+    document.getElementById('content').style.display = 'none';
+    document.getElementById('hero-period').textContent = 'Gagal memuat data';
+    document.getElementById('empty-msg').textContent = 'Gagal memuat data: ' + loadErr + (/PIN|akses/i.test(loadErr) ? ' Sesi login dihapus, muat ulang halaman lalu masuk lagi dengan PIN yang benar.' : '');
+    if(/PIN|akses/i.test(loadErr)){ ['siak-rs-pin-ok','siak-rs-role','siak-rs-pin','siak-rs-unit'].forEach(k=>sessionStorage.removeItem(k)); }
+    return;
+  }
   try{ const a = await callGAS('getAnalysis', { pin: APP_PIN }); if(a && a.text) analysisText = a.text; }catch(e){ console.error(e); }
   // Saldo awal & mutasi kas: tambahan, bila gagal dimuat panel kas tetap tampil dari transaksi saja.
   let neracaAwal = { items:[] }, mutasi = [];
