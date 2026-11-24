@@ -140,6 +140,17 @@
   .analysis-body strong{color:var(--navy);}
   .analysis-body ul{margin:8px 0;padding-left:20px;}
   .analysis-body li{margin-bottom:5px;}
+  /* Agent Keuangan */
+  .agent-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;}
+  .agent-chip{border:1px solid var(--border);background:#fff;color:var(--text);border-radius:20px;padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer;}
+  .agent-chip:hover{border-color:var(--teal);color:var(--teal);}
+  .agent-log{max-height:56vh;min-height:220px;overflow-y:auto;padding:4px 2px;display:flex;flex-direction:column;gap:10px;}
+  .agent-msg{max-width:88%;padding:10px 14px;border-radius:12px;font-size:13.5px;line-height:1.6;}
+  .agent-msg.bot{background:#F3F6F8;border:1px solid var(--border);align-self:flex-start;}
+  .agent-msg.me{background:var(--teal);color:#fff;align-self:flex-end;white-space:pre-wrap;}
+  .agent-msg p{margin:0 0 8px;} .agent-msg ul{margin:6px 0;padding-left:20px;} .agent-msg li{margin-bottom:4px;}
+  .agent-input{display:flex;gap:10px;margin-top:12px;align-items:flex-end;}
+  .agent-input textarea{flex:1;resize:vertical;border:1px solid var(--border);border-radius:10px;padding:10px 12px;font:inherit;font-size:13.5px;}
 
   .pin-overlay{position:fixed;inset:0;background:var(--navy);display:flex;align-items:center;justify-content:center;z-index:100;}
   .pin-box{background:var(--navy2);border-radius:16px;padding:34px 36px;text-align:center;width:320px;}
@@ -186,6 +197,7 @@
       <button class="navitem" data-view="jurnal">📒&nbsp; Jurnal &amp; Buku Besar</button>
       <button class="navitem" data-view="neraca">⚖️&nbsp; Neraca</button>
       <button class="navitem" data-view="ai">🤖&nbsp; Analisis AI</button>
+      <button class="navitem" data-view="agent">🧑‍💼&nbsp; Agent Keuangan</button>
       <button class="navitem" data-view="riwayat">🕘&nbsp; Riwayat Unggahan</button>
       <button class="navitem admin-only" data-view="aksesunit">🔑&nbsp; Manajemen Akses</button>
       <a class="navitem admin-only" href="direksi.html" style="text-decoration:none;display:flex;">👔&nbsp; Mode Direksi</a>
@@ -1076,6 +1088,34 @@
       <div class="ailog" id="ai-analysis-log"></div>
     </section>
 
+    <!-- AGENT KEUANGAN -->
+    <section class="view" id="view-agent">
+      <div class="topbar">
+        <div>
+          <div class="pagetitle">Agent Keuangan</div>
+          <div class="pagesub">Tanya apa saja tentang data keuangan RS. Jawaban hanya berdasarkan data SIAK-RS dan berupa saran.</div>
+        </div>
+        <button class="btn" id="agent-reset" style="background:transparent;color:var(--teal);border:1px solid var(--teal);">↺ Percakapan Baru</button>
+      </div>
+      <div class="card">
+        <div class="agent-chips" id="agent-chips">
+          <button class="agent-chip" data-q="Buat ringkasan keuangan bulan terakhir yang ada di data, dengan format ringkasan bulanan.">📅 Ringkasan bulanan</button>
+          <button class="agent-chip" data-q="Apa saja hal janggal atau transaksi tidak biasa yang perlu saya cek?">🔎 Hal janggal</button>
+          <button class="agent-chip" data-q="Beban apa yang paling besar kenaikannya dibanding bulan sebelumnya, dan apa kemungkinan penyebabnya?">📈 Beban naik</button>
+          <button class="agent-chip" data-q="Berikan 3 saran tindak lanjut paling penting berdasarkan data saat ini.">💡 3 saran</button>
+        </div>
+        <div class="agent-log" id="agent-log">
+          <div class="agent-msg bot">Selamat datang. Saya Agent Keuangan SIAK-RS. Pilih pertanyaan cepat di atas atau ketik pertanyaan Anda.</div>
+        </div>
+        <div class="agent-input">
+          <textarea id="agent-q" rows="2" placeholder="Contoh: kenapa beban bulan ini naik?"></textarea>
+          <button class="btn" id="agent-send">Kirim</button>
+        </div>
+        <div class="ailog" id="agent-status"></div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:6px;">Agent hanya memberi saran dan tidak mengubah data apa pun. Periksa kembali angka penting sebelum dipakai untuk keputusan.</div>
+      </div>
+    </section>
+
     <!-- RIWAYAT -->
     <section class="view" id="view-riwayat">
       <div class="topbar">
@@ -1222,6 +1262,7 @@ function goView(name){
   if(name==='penyusutan') renderPenyusutan();
   if(name==='harian') renderOperasionalHarian();
   if(name==='aksesunit') renderManajemenAkses();
+  if(name==='agent') initAgent();
 }
 document.getElementById('navlist').addEventListener('click', e=>{
   const btn = e.target.closest('.navitem'); if(!btn) return;
@@ -3885,6 +3926,7 @@ document.getElementById('btn-export-rekap').addEventListener('click', exportReka
    di Script Properties dan meneruskannya ke Anthropic (lihat Code.gs -> actionAiProxy). */
 async function callClaude(userText, maxTokens){
   const data = await callGAS('aiProxy', {
+    pin: APP_PIN,
     model: 'claude-sonnet-4-6',
     max_tokens: maxTokens || 1000,
     messages: [{ role:'user', content: userText }]
@@ -4028,6 +4070,156 @@ Data:
   btn.disabled = false;
 });
 
+/* ============================= AGENT KEUANGAN =============================
+   Asisten tanya-jawab keuangan. Memakai jalur AI yang sudah ada (callClaude -> aiProxy di Apps Script),
+   jadi TIDAK perlu mengubah Code.gs. Data dikirim berupa RINGKASAN agregat (bukan seluruh transaksi).
+   Ambang "material" di bawah ini silakan disesuaikan dengan skala RS. */
+const AGENT_AMBANG_PCT = 10;            // perubahan dianggap material bila naik/turun lebih dari ini (%)
+const AGENT_AMBANG_RUPIAH = 50000000;   // atau lebih dari nilai ini (Rp)
+const AGENT_MAX_TURNS = 6;              // jumlah giliran percakapan terakhir yang dikirim ke AI
+let AGENT_HISTORY = [];                 // [{role:'user'|'assistant', content:'...'}]
+let AGENT_BUSY = false;
+
+const AGENT_INSTRUKSI = `PERAN
+Kamu adalah asisten analisa keuangan RSU Allam Medica, rumah sakit umum tipe C (sekitar 140 tempat tidur) yang melayani pasien JKN/BPJS dan umum/asuransi. Kamu membantu Wakil Direktur Umum dan Keuangan membaca data keuangan dari sistem SIAK-RS.
+
+ATURAN UTAMA
+1. Jawab HANYA dari bagian DATA di bawah. Jangan mengarang angka, tren, atau fakta yang tidak ada di data.
+2. Bila data tidak cukup, tulis: "Data tidak tersedia di SIAK-RS untuk hal ini" dan sebutkan data apa yang dibutuhkan.
+3. Tulis angka dalam Rupiah dengan periode yang jelas. Untuk selisih dan persentase, tunjukkan cara menghitungnya.
+4. Bedakan fakta (dari data) dan dugaan penyebab. Tandai dugaan dengan kata "kemungkinan" dan sebutkan data apa yang perlu dicek untuk memastikannya.
+5. Kamu hanya memberi saran. Jangan menyarankan mengubah jurnal atau data. Keputusan tetap di tangan manajemen.
+6. Jangan menyebut data pribadi pasien. Jika ada, abaikan.
+7. Gunakan Bahasa Indonesia yang ringkas dan formal. Hanya gunakan **tebal** dan bullet dengan tanda "-". Jangan memakai tabel atau heading markdown.
+
+CARA MENGANALISIS
+- Bandingkan bulan berjalan dengan bulan sebelumnya bila datanya ada.
+- Soroti hanya perubahan yang material: naik/turun lebih dari ${AGENT_AMBANG_PCT}% atau lebih dari Rp ${AGENT_AMBANG_RUPIAH.toLocaleString('id-ID')}.
+- Perhatikan khusus: pendapatan, beban SDM, beban obat dan BMHP, OPEX vs CAPEX, saldo awal, dan transaksi yang nilainya jauh di atas biasanya.
+- Tandai hal janggal: transaksi bernilai sangat besar dibanding biasanya, bulan tanpa pendapatan, kategori yang tiba-tiba kosong atau melonjak.
+
+FORMAT RINGKASAN BULANAN (hanya bila diminta ringkasan)
+**Gambaran umum** (2-3 kalimat)
+**Pendapatan**
+**Beban** (OPEX, CAPEX, pengeluaran lain)
+**Selisih arus kas**
+**Hal janggal yang perlu dicek**
+**3 saran tindak lanjut**
+
+Untuk pertanyaan bebas, jawab langsung dan singkat tanpa format di atas, lalu sebutkan dasar datanya (bulan atau kategori yang dipakai).`;
+
+function agentBuildContext(){
+  const tx = (STATE.transactions || []).filter(t => ['Pendapatan','OPEX','CAPEX','Pengeluaran'].indexOf(t.kategori) >= 0);
+  if(tx.length === 0) return null;
+  const cats = ['Pendapatan','OPEX','CAPEX','Pengeluaran'];
+  const rp = n => 'Rp' + fmtNum(Math.abs(n));
+  const dates = tx.map(t=>t.tanggal).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  const sums = {}; cats.forEach(c=>sums[c]=0);
+  const byMonth = {};
+  tx.forEach(t=>{
+    const v = Math.abs(Number(t.amount)||0);
+    sums[t.kategori] += v;
+    if(/^\d{4}-\d{2}-\d{2}$/.test(t.tanggal)){
+      const m = t.tanggal.slice(0,7);
+      if(!byMonth[m]){ byMonth[m] = {}; cats.forEach(c=>byMonth[m][c]=0); byMonth[m].n = 0; }
+      byMonth[m][t.kategori] += v; byMonth[m].n++;
+    }
+  });
+  const keluar = o => o.OPEX + o.CAPEX + o.Pengeluaran;
+  const bulan = Object.keys(byMonth).sort();
+  const barisBulan = bulan.map(m=>{
+    const o = byMonth[m];
+    return `${m}: Pendapatan ${rp(o.Pendapatan)}; OPEX ${rp(o.OPEX)}; CAPEX ${rp(o.CAPEX)}; Pengeluaran lain ${rp(o.Pengeluaran)}; Selisih ${(o.Pendapatan-keluar(o)<0?'-':'')}${rp(o.Pendapatan-keluar(o))}; ${o.n} transaksi`;
+  });
+  const top = {};
+  ['Pendapatan','OPEX','CAPEX','Pengeluaran'].forEach(c=>{
+    top[c] = tx.filter(t=>t.kategori===c).sort((a,b)=>Math.abs(b.amount)-Math.abs(a.amount)).slice(0,8)
+      .map(t=>`${t.tanggal||'?'} ${String(t.keterangan||'').slice(0,60)}: ${rp(t.amount)}`);
+  });
+  // transaksi janggal: jauh di atas rata-rata kategorinya (rata-rata + 2,5 simpangan baku)
+  const janggal = [];
+  cats.forEach(c=>{
+    const arr = tx.filter(t=>t.kategori===c).map(t=>Math.abs(Number(t.amount)||0));
+    if(arr.length < 10) return;
+    const mean = arr.reduce((a,b)=>a+b,0)/arr.length;
+    const sd = Math.sqrt(arr.reduce((a,b)=>a+(b-mean)*(b-mean),0)/arr.length);
+    tx.filter(t=>t.kategori===c && Math.abs(Number(t.amount)||0) > mean + 2.5*sd).forEach(t=>{
+      janggal.push({v:Math.abs(t.amount), s:`${t.tanggal||'?'} [${c}] ${String(t.keterangan||'').slice(0,60)}: ${rp(t.amount)} (rata-rata kategori ${rp(mean)})`});
+    });
+  });
+  janggal.sort((a,b)=>b.v-a.v);
+  const awal = ((STATE.neracaAwal && STATE.neracaAwal.items) || []).filter(i=>Number(i.saldo)).map(i=>`${i.pos}: ${rp(i.saldo)}`);
+  return [
+    `Periode data: ${dates.length ? dates[0]+' s.d. '+dates[dates.length-1] : 'tidak diketahui'}; jumlah transaksi: ${tx.length}`,
+    `Total keseluruhan: Pendapatan ${rp(sums.Pendapatan)}; OPEX ${rp(sums.OPEX)}; CAPEX ${rp(sums.CAPEX)}; Pengeluaran lain ${rp(sums.Pengeluaran)}; Selisih ${((sums.Pendapatan-keluar(sums))<0?'-':'')}${rp(sums.Pendapatan-keluar(sums))}`,
+    `Rekap per bulan:\n${barisBulan.join('\n') || '-'}`,
+    `Transaksi terbesar Pendapatan:\n${top.Pendapatan.join('\n') || '-'}`,
+    `Transaksi terbesar OPEX:\n${top.OPEX.join('\n') || '-'}`,
+    `Transaksi terbesar CAPEX:\n${top.CAPEX.join('\n') || '-'}`,
+    `Transaksi terbesar Pengeluaran lain:\n${top.Pengeluaran.join('\n') || '-'}`,
+    `Transaksi yang jauh di atas biasanya (kandidat janggal, perlu dicek manusia):\n${janggal.slice(0,10).map(x=>x.s).join('\n') || 'tidak ada yang menonjol'}`,
+    `Saldo awal neraca (yang terisi): ${awal.join('; ') || 'belum diisi'}`
+  ].join('\n\n');
+}
+
+function agentAddMsg(who, text){
+  const log = document.getElementById('agent-log');
+  const div = document.createElement('div');
+  div.className = 'agent-msg ' + (who==='me' ? 'me' : 'bot');
+  div.innerHTML = who==='me' ? escapeHtml(text) : simpleMarkdown(text);
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+async function agentAsk(question){
+  question = String(question||'').trim();
+  if(!question || AGENT_BUSY) return;
+  const ctx = agentBuildContext();
+  if(!ctx){ showToast('Belum ada data transaksi. Unggah dokumen terlebih dahulu.'); return; }
+  AGENT_BUSY = true;
+  const btn = document.getElementById('agent-send'), status = document.getElementById('agent-status');
+  btn.disabled = true;
+  agentAddMsg('me', question);
+  status.innerHTML = '<span class="spinner"></span> Agent sedang menganalisis...';
+  // Instruksi + data selalu disisipkan ulang pada pesan pertama agar data selalu terbaru.
+  const hist = AGENT_HISTORY.slice(-AGENT_MAX_TURNS*2);
+  while(hist.length && hist[0].role !== 'user') hist.shift();
+  const first = `${AGENT_INSTRUKSI}\n\nDATA\n${ctx}\n\nPERTANYAAN: `;
+  const messages = hist.length
+    ? [{role:'user', content: first + hist[0].content}].concat(hist.slice(1), [{role:'user', content: question}])
+    : [{role:'user', content: first + question}];
+  try{
+    const data = await callGAS('aiProxy', { pin: APP_PIN, model:'claude-sonnet-4-6', max_tokens:1400, messages });
+    const text = (data.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('\n').trim() || 'Tidak ada jawaban dari AI.';
+    AGENT_HISTORY.push({role:'user', content: question}, {role:'assistant', content: text});
+    agentAddMsg('bot', text);
+    status.textContent = '';
+  }catch(err){
+    console.error(err);
+    agentAddMsg('bot', 'Maaf, agent gagal dihubungi. Coba lagi beberapa saat.');
+    status.textContent = '';
+  }
+  AGENT_BUSY = false;
+  btn.disabled = false;
+}
+
+function initAgent(){
+  if(initAgent.done) return; initAgent.done = true;
+  document.getElementById('agent-send').addEventListener('click', ()=>{
+    const el = document.getElementById('agent-q'); const q = el.value; el.value=''; agentAsk(q);
+  });
+  document.getElementById('agent-q').addEventListener('keydown', e=>{
+    if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); document.getElementById('agent-send').click(); }
+  });
+  document.getElementById('agent-chips').addEventListener('click', e=>{
+    const b = e.target.closest('.agent-chip'); if(b) agentAsk(b.dataset.q);
+  });
+  document.getElementById('agent-reset').addEventListener('click', ()=>{
+    AGENT_HISTORY = [];
+    document.getElementById('agent-log').innerHTML = '<div class="agent-msg bot">Percakapan baru dimulai. Silakan bertanya.</div>';
+  });
+}
+
 /* ============================= PIN GATE ============================= */
 /** Menyesuaikan tampilan sidebar sesuai peran: PIN unit hanya melihat menu Operasional Harian
  *  (nav item lain disembunyikan sepenuhnya, bukan sekadar dinonaktifkan), PIN Super Admin
@@ -4080,7 +4272,9 @@ async function trySubmitPin(){
   btn.disabled = true; errEl.textContent = '';
   try{
     const res = await callGAS('checkPin', { pin });
-    if(res.valid){
+    if(res.valid && res.role==='direksi'){
+      errEl.textContent = 'PIN ini khusus Mode Direksi. Buka halaman direksi.html.';
+    }else if(res.valid){
       APP_ROLE = res.role;
       APP_PIN = pin;
       APP_UNIT = (res.role==='unit') ? { id: res.unitId, name: res.unitName } : null;
@@ -4111,6 +4305,10 @@ document.getElementById('btn-logout').addEventListener('click', (e)=>{
 
 /* ============================= INIT ============================= */
 (function init(){
+  if(sessionStorage.getItem('siak-rs-pin-ok')==='1' && sessionStorage.getItem('siak-rs-role')==='direksi'){
+    // sesi dari Mode Direksi tidak boleh masuk ke aplikasi kerja
+    ['siak-rs-pin-ok','siak-rs-role','siak-rs-pin','siak-rs-unit'].forEach(k=>sessionStorage.removeItem(k));
+  }
   if(sessionStorage.getItem('siak-rs-pin-ok')==='1'){
     APP_ROLE = sessionStorage.getItem('siak-rs-role') || 'admin';
     APP_PIN = sessionStorage.getItem('siak-rs-pin') || '';
